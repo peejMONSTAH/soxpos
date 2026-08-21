@@ -6,15 +6,13 @@ import { auditLogsRepo } from './audit-logs.repo';
 
 export const categoriesRepo = {
   async getCategories(): Promise<Category[]> {
-    const localCats = getStorage<Category[]>(KEYS.CATEGORIES, SEED_CATEGORIES);
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('categories')
           .select('*')
           .order('name', { ascending: true });
-        if (data && !error && data.length > 0) {
-          // Supabase is single source of truth for categories
+        if (data && !error) {
           setStorage(KEYS.CATEGORIES, data as Category[]);
           return data as Category[];
         }
@@ -22,14 +20,8 @@ export const categoriesRepo = {
         console.warn('Error loading categories from Supabase:', err);
       }
     }
-    // Filter out legacy non-uuid categories from local cache
-    const validLocalCats = localCats.map((c) => {
-      if (c.id === 'cat-kitchen') return { ...c, id: 'c0000000-0000-0000-0000-000000000002' };
-      if (c.id === 'cat-store') return { ...c, id: 'c0000000-0000-0000-0000-000000000001' };
-      return c;
-    });
-    setStorage(KEYS.CATEGORIES, validLocalCats);
-    return validLocalCats;
+    const localCats = getStorage<Category[]>(KEYS.CATEGORIES, []);
+    return localCats;
   },
 
   async createCategory(

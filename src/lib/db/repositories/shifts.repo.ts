@@ -14,7 +14,7 @@ export const shiftsRepo = {
           .from('shifts')
           .select('*, profiles(full_name)')
           .order('start_time', { ascending: false });
-        if (data && !error && data.length > 0) {
+        if (data && !error) {
           const mapped = data.map((s: any) => ({
             ...s,
             user_name: s.profiles?.full_name || 'Staff',
@@ -111,11 +111,29 @@ export const shiftsRepo = {
     if (index === -1) throw new Error('Shift not found');
 
     const currentShift = shifts[index];
-    const localSales = getStorage<Sale[]>(KEYS.SALES, []);
-    const shiftSales = localSales.filter((s) => s.shift_id === shiftId && s.status === 'completed');
-    const cashSales = shiftSales
-      .filter((s) => s.payment_method === 'cash')
-      .reduce((sum, s) => sum + s.total, 0);
+    let cashSales = 0;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: dbSales } = await supabase
+          .from('sales')
+          .select('total, payment_method, status')
+          .eq('shift_id', shiftId)
+          .eq('status', 'completed');
+        if (dbSales) {
+          cashSales = dbSales
+            .filter((s: any) => s.payment_method === 'cash')
+            .reduce((sum: number, s: any) => sum + (Number(s.total) || 0), 0);
+        }
+      } catch (err) {
+        console.warn('Error fetching shift sales from Supabase:', err);
+      }
+    } else {
+      const localSales = getStorage<Sale[]>(KEYS.SALES, []);
+      const shiftSales = localSales.filter((s) => s.shift_id === shiftId && s.status === 'completed');
+      cashSales = shiftSales
+        .filter((s) => s.payment_method === 'cash')
+        .reduce((sum, s) => sum + s.total, 0);
+    }
 
     const expectedCash = currentShift.opening_cash + cashSales;
     const difference = actualCash - expectedCash;

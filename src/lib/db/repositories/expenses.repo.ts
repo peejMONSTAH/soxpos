@@ -13,7 +13,7 @@ export const expensesRepo = {
           .from('expenses')
           .select('*, profiles(full_name)')
           .order('date', { ascending: false });
-        if (data && !error && data.length > 0) {
+        if (data && !error) {
           const mapped = data.map((e: any) => ({
             ...e,
             created_by_name: e.profiles?.full_name || 'Staff',

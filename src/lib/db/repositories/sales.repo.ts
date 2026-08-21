@@ -17,24 +17,13 @@ export const salesRepo = {
           .select('*, sale_items(*), profiles(full_name)')
           .order('created_at', { ascending: false });
         if (data && !error) {
-          const map = new Map<string, Sale>();
-          // Cloud Supabase sales take priority
-          data.forEach((s: any) => {
-            map.set(s.id, {
-              ...s,
-              user_name: s.profiles?.full_name || 'Cashier',
-              items: s.sale_items || [],
-            });
-          });
-          // Retain any locally recorded sales not yet uploaded
-          localSales.forEach((s) => {
-            if (!map.has(s.id)) map.set(s.id, s);
-          });
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          setStorage(KEYS.SALES, merged);
-          return merged;
+          const cloudSales = data.map((s: any) => ({
+            ...s,
+            user_name: s.profiles?.full_name || 'Cashier',
+            items: s.sale_items || [],
+          })) as Sale[];
+          setStorage(KEYS.SALES, cloudSales);
+          return cloudSales;
         }
       } catch (err) {
         console.warn('Error loading sales from Supabase:', err);

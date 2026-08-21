@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS public.products (
 CREATE TABLE IF NOT EXISTS public.inventory_movements (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
+    product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     type TEXT NOT NULL CHECK (type IN ('SALE', 'STOCK_IN', 'ADJUSTMENT', 'DAMAGE', 'RETURN', 'CORRECTION')),
     quantity INT NOT NULL, -- Negative for SALE/DAMAGE, Positive for STOCK_IN/RETURN
     previous_stock INT NOT NULL,

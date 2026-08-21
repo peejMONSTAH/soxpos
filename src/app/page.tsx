@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/authStore';
 
 export default function RootPage() {
   const router = useRouter();
-  const { role, isLoading, initialize } = useAuthStore();
+  const { user, role, isLoading, initialize } = useAuthStore();
 
   useEffect(() => {
     initialize();
@@ -14,13 +14,15 @@ export default function RootPage() {
 
   useEffect(() => {
     if (!isLoading) {
-      if (role === 'owner') {
+      if (!user) {
+        router.replace('/login');
+      } else if (role === 'owner') {
         router.replace('/dashboard');
       } else {
         router.replace('/pos');
       }
     }
-  }, [role, isLoading, router]);
+  }, [user, role, isLoading, router]);
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-background">

@@ -139,8 +139,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             set({ user: null, isLoading: false });
           }
         });
+
+        // No active session found on Supabase
+        set({ user: null, isLoading: false });
+        return;
       } catch (err) {
         console.error('Error checking Supabase auth session:', err);
+        set({ user: null, isLoading: false });
+        return;
       }
     }
 

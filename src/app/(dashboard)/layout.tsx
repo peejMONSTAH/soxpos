@@ -25,28 +25,36 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const initialize = useAuthStore((state) => state.initialize);
+  const user = useAuthStore((state) => state.user);
   const role = useAuthStore((state) => state.role);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const initialize = useAuthStore((state) => state.initialize);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
 
-  // Route protection for cashier staff
+  // Route protection for unauthenticated users and cashier staff
   useEffect(() => {
-    if (!isLoading && role === 'staff') {
-      const isOwnerRoute = OWNER_ONLY_ROUTES.some(
-        (route) => pathname === route || pathname.startsWith(`${route}/`)
-      );
-      if (isOwnerRoute) {
-        toast.error('Access Restricted', {
-          description: 'Cashier accounts can only access the POS Terminal, Sales, and Shift panels.',
-        });
-        router.replace('/pos');
+    if (!isLoading) {
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+
+      if (role === 'staff') {
+        const isOwnerRoute = OWNER_ONLY_ROUTES.some(
+          (route) => pathname === route || pathname.startsWith(`${route}/`)
+        );
+        if (isOwnerRoute) {
+          toast.error('Access Restricted', {
+            description: 'Cashier accounts can only access the POS Terminal, Sales, and Shift panels.',
+          });
+          router.replace('/pos');
+        }
       }
     }
-  }, [pathname, role, isLoading, router]);
+  }, [pathname, user, role, isLoading, router]);
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">

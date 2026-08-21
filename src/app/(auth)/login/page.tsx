@@ -12,10 +12,23 @@ import { toast } from 'sonner';
 export default function LoginPage() {
   const router = useRouter();
   const signInWithEmail = useAuthStore((state) => state.signInWithEmail);
+  const user = useAuthStore((state) => state.user);
+  const isAuthLoading = useAuthStore((state) => state.isLoading);
+  const initialize = useAuthStore((state) => state.initialize);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  React.useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  React.useEffect(() => {
+    if (!isAuthLoading && user) {
+      router.replace(user.role === 'owner' ? '/dashboard' : '/pos');
+    }
+  }, [user, isAuthLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

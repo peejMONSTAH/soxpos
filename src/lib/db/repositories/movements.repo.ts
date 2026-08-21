@@ -19,30 +19,13 @@ export const movementsRepo = {
           .select('*, products(name), profiles(full_name)')
           .order('created_at', { ascending: false });
         if (data && !error) {
-          const map = new Map<string, InventoryMovement>();
-          // Cloud movements take priority
-          data.forEach((m: any) => {
-            map.set(m.id, {
-              ...m,
-              product_name: m.products?.name || prodMap.get(m.product_id) || 'Item',
-              created_by_name: m.profiles?.full_name || profileMap.get(m.created_by) || 'Staff',
-            });
-          });
-          // Retain any locally recorded movements not yet synced
-          localMovements.forEach((m) => {
-            if (!map.has(m.id)) {
-              map.set(m.id, {
-                ...m,
-                product_name: m.product_name || prodMap.get(m.product_id) || 'Item',
-                created_by_name: m.created_by_name || profileMap.get(m.created_by || '') || 'System',
-              });
-            }
-          });
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          setStorage(KEYS.MOVEMENTS, merged);
-          return merged;
+          const cloudMovements = data.map((m: any) => ({
+            ...m,
+            product_name: m.products?.name || prodMap.get(m.product_id) || 'Item',
+            created_by_name: m.profiles?.full_name || profileMap.get(m.created_by) || 'Staff',
+          })) as InventoryMovement[];
+          setStorage(KEYS.MOVEMENTS, cloudMovements);
+          return cloudMovements;
         }
       } catch (err) {
         console.warn('Error loading inventory movements from Supabase:', err);

@@ -3,17 +3,14 @@
  * Supports Google Chrome on Android, Windows, macOS, and Linux
  */
 
-// Common Bluetooth GATT Service UUIDs for thermal ESC/POS printers
-export const COMMON_PRINTER_SERVICES = [
-  0x18f0, // Standard BLE Thermal Printer Service (000018f0-0000-1000-8000-00805f9b34fb)
-  0xffe0, // HM-10 / CC2541 / Goojprt / MPT / Xprinter (0000ffe0-0000-1000-8000-00805f9b34fb)
-  0xff00, // Generic ESC/POS BLE (0000ff00-0000-1000-8000-00805f9b34fb)
-  0xaf30, // OEM Thermal Service
+// Full canonical 128-bit lowercase UUIDs required by Chromium
+export const CANONICAL_PRINTER_SERVICES: string[] = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE Thermal Printer Service
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / CC2541 / Goojprt / MPT / Xprinter
+  '0000ff00-0000-1000-8000-00805f9b34fb', // Generic ESC/POS BLE Service
+  '0000af30-0000-1000-8000-00805f9b34fb', // OEM POS Service
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // PosPrinter UUID
   '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial BLE
-  '000018f0-0000-1000-8000-00805f9b34fb',
-  '0000ffe0-0000-1000-8000-00805f9b34fb',
-  '0000ff00-0000-1000-8000-00805f9b34fb',
 ];
 
 export interface BluetoothPrinterState {
@@ -52,16 +49,17 @@ class BluetoothPrinterService {
     );
   }
 
-  /**
-   * Get diagnostic reason if Bluetooth is unavailable
-   */
   public getDiagnosticReason(): string {
     if (typeof window === 'undefined') return 'Server environment';
-    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (
+      window.location.protocol !== 'https:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1'
+    ) {
       return `Insecure Context (${window.location.protocol}//). Google Chrome requires HTTPS to allow Bluetooth access.`;
     }
     if (!('bluetooth' in navigator)) {
-      return 'Web Bluetooth is not enabled in this browser. Please use Google Chrome or Microsoft Edge.';
+      return 'Web Bluetooth is not supported in this browser. Please use Google Chrome or Microsoft Edge on Android.';
     }
     return 'Supported';
   }
@@ -82,51 +80,26 @@ class BluetoothPrinterService {
   }
 
   /**
-   * Scan and connect to a Bluetooth thermal printer
+   * Scan and connect to a Bluetooth thermal printer.
+   * MUST be invoked directly from a user click event to preserve user gesture activation.
    */
   public async connect(): Promise<boolean> {
     if (!this.isSupported()) {
       const reason = this.getDiagnosticReason();
-      const errMsg = `Web Bluetooth unavailable: ${reason}`;
-      this.updateState({ error: errMsg, isConnecting: false });
-      alert(errMsg);
+      alert(`Bluetooth cannot start:\n\n${reason}\n\nMake sure you are opening your POS site via HTTPS in Google Chrome on your Android tablet.`);
       return false;
     }
 
+    this.updateState({ isConnecting: true, error: null });
+
     try {
-      this.updateState({ isConnecting: true, error: null });
-
       const navBluetooth = (navigator as any).bluetooth;
-      let device: any = null;
 
-      // Strategy 1: Request with broad optional services
-      try {
-        device = await navBluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: COMMON_PRINTER_SERVICES,
-        });
-      } catch (err1: any) {
-        console.warn('requestDevice with full services failed, trying simplified options:', err1);
-        if (err1?.name === 'NotFoundError') {
-          // User clicked "Cancel" in the browser pairing dialog
-          this.updateState({ isConnecting: false });
-          return false;
-        }
-
-        // Strategy 2: Fallback with minimal standard services
-        try {
-          device = await navBluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [0x18f0, 0xffe0, 0xff00],
-          });
-        } catch (err2: any) {
-          if (err2?.name === 'NotFoundError') {
-            this.updateState({ isConnecting: false });
-            return false;
-          }
-          throw err2;
-        }
-      }
+      // Direct requestDevice with valid 128-bit UUIDs
+      const device = await navBluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: CANONICAL_PRINTER_SERVICES,
+      });
 
       if (!device) {
         this.updateState({ isConnecting: false });
@@ -143,7 +116,7 @@ class BluetoothPrinterService {
       // Discover writable characteristic
       const characteristic = await this.findWritableCharacteristic(server);
       if (!characteristic) {
-        throw new Error('Connected to Bluetooth device, but no writable ESC/POS print channel was found.');
+        throw new Error('Connected to device, but no writable ESC/POS print channel was found. If this is a Bluetooth Classic printer, use the RawBT button.');
       }
 
       this.writeCharacteristic = characteristic;
@@ -158,6 +131,12 @@ class BluetoothPrinterService {
 
       return true;
     } catch (err: any) {
+      if (err?.name === 'NotFoundError') {
+        // User dismissed the Bluetooth picker dialog
+        this.updateState({ isConnecting: false });
+        return false;
+      }
+
       const msg = err?.message || 'Bluetooth connection error';
       console.error('Bluetooth pair error:', err);
       this.updateState({
@@ -165,7 +144,7 @@ class BluetoothPrinterService {
         isConnecting: false,
         error: msg,
       });
-      alert(`Bluetooth Pairing Error: ${msg}\n\nTip: If your printer is Bluetooth Classic SPP only, use the RawBT button instead.`);
+      alert(`Bluetooth Pairing: ${msg}\n\nNote: If your printer uses Bluetooth Classic SPP, pair it in Android Bluetooth settings and use the 'RawBT Android' button.`);
       return false;
     }
   }
@@ -174,7 +153,7 @@ class BluetoothPrinterService {
    * Find a writable characteristic across known printer services
    */
   private async findWritableCharacteristic(server: any): Promise<any> {
-    for (const serviceUuid of COMMON_PRINTER_SERVICES) {
+    for (const serviceUuid of CANONICAL_PRINTER_SERVICES) {
       try {
         const service = await server.getPrimaryService(serviceUuid);
         const characteristics = await service.getCharacteristics();
@@ -186,11 +165,11 @@ class BluetoothPrinterService {
           }
         }
       } catch {
-        // Continue searching other services
+        // Continue searching
       }
     }
 
-    // Fallback: search all available primary services
+    // Fallback: search all primary services
     try {
       const services = await server.getPrimaryServices();
       for (const service of services) {
@@ -213,9 +192,6 @@ class BluetoothPrinterService {
     return null;
   }
 
-  /**
-   * Reconnect to the currently paired device if available
-   */
   public async reconnect(): Promise<boolean> {
     if (!this.device || !this.device.gatt) return false;
     if (this.device.gatt.connected && this.writeCharacteristic) return true;
@@ -235,9 +211,6 @@ class BluetoothPrinterService {
     }
   }
 
-  /**
-   * Disconnect from the Bluetooth printer
-   */
   public disconnect() {
     if (this.device && this.device.gatt && this.device.gatt.connected) {
       this.device.gatt.disconnect();
@@ -255,9 +228,6 @@ class BluetoothPrinterService {
     });
   }
 
-  /**
-   * Send raw ESC/POS binary data to the printer in small chunked batches
-   */
   public async printBytes(bytes: Uint8Array, chunkSize = 100): Promise<void> {
     if (!this.state.isConnected || !this.writeCharacteristic) {
       const ok = await this.reconnect();

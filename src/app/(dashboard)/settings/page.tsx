@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { usePrinterStore } from '@/stores/printerStore';
 import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
+import { printTestViaRawBT } from '@/lib/rawbt';
 import {
   Store,
   Printer,
@@ -19,6 +20,7 @@ import {
   Sparkles,
   Sliders,
   FileCheck2,
+  Smartphone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,9 +48,12 @@ export default function SettingsPage() {
   } = usePrinterStore();
 
   const [isBluetoothSupported, setIsBluetoothSupported] = useState(true);
+  const [diagnosticReason, setDiagnosticReason] = useState<string>('');
 
   useEffect(() => {
-    setIsBluetoothSupported(bluetoothPrinterService.isSupported());
+    const supported = bluetoothPrinterService.isSupported();
+    setIsBluetoothSupported(supported);
+    setDiagnosticReason(bluetoothPrinterService.getDiagnosticReason());
   }, []);
 
   // Simple local store form states
@@ -66,6 +71,23 @@ export default function SettingsPage() {
       setHeaderNote(business.receipt_header || 'Salamat sa pagpalit!');
     }
   }, [business]);
+
+  const handlePairClick = async () => {
+    if (!isBluetoothSupported) {
+      alert(`Bluetooth cannot start:\n\n${diagnosticReason}\n\nMake sure you are opening your POS site via HTTPS (e.g. on Vercel) inside Google Chrome on your Android tablet.`);
+      return;
+    }
+    await connectPrinter();
+  };
+
+  const handleRawBTTest = () => {
+    try {
+      printTestViaRawBT(business?.name || 'SOX POS Store', paperWidth);
+      toast.success('RawBT test print sent');
+    } catch (err: any) {
+      toast.error('RawBT Error', { description: err?.message });
+    }
+  };
 
   const handleSaveStoreInfo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,9 +152,9 @@ export default function SettingsPage() {
             <div className="flex items-start gap-3 p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold">Web Bluetooth is not supported in this browser.</p>
-                <p className="mt-0.5 text-amber-700 dark:text-amber-400">
-                  For direct Android tablet wireless printing, please open this POS website in <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>. (Safari and embedded webviews do not support Web Bluetooth).
+                <p className="font-bold">Web Bluetooth Notice: {diagnosticReason}</p>
+                <p className="mt-1 text-amber-700 dark:text-amber-400">
+                  To use direct Bluetooth pairing, please make sure you open your POS through your <strong>HTTPS Vercel link</strong> inside <strong>Google Chrome</strong> on your tablet.
                 </p>
               </div>
             </div>
@@ -181,8 +203,8 @@ export default function SettingsPage() {
                   type="button"
                   variant="emerald"
                   size="sm"
-                  onClick={connectPrinter}
-                  disabled={isConnecting || !isBluetoothSupported}
+                  onClick={handlePairClick}
+                  disabled={isConnecting}
                   className="gap-1.5 text-xs font-bold"
                 >
                   <Bluetooth className="h-3.5 w-3.5" />
@@ -190,6 +212,29 @@ export default function SettingsPage() {
                 </Button>
               )}
             </div>
+          </div>
+
+          {/* RawBT Companion Option for Bluetooth Classic SPP printers */}
+          <div className="p-3.5 rounded-lg border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
+                <Smartphone className="h-4 w-4 text-sky-600" />
+                Android RawBT Companion Option (Works with ALL Bluetooth Printers)
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                If your printer uses Bluetooth Classic SPP or does not show in the BLE list, you can print instantly using the free <strong>RawBT</strong> app from Google Play.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRawBTTest}
+              className="gap-1.5 text-xs shrink-0 font-medium"
+            >
+              <Printer className="h-3.5 w-3.5 text-sky-600" />
+              Test RawBT Print
+            </Button>
           </div>
 
           {/* Paper Size & Hardware Settings */}
@@ -257,7 +302,7 @@ export default function SettingsPage() {
           </div>
 
           <div className="text-[11px] text-muted-foreground bg-muted/30 p-2.5 rounded-md border border-border/60">
-            <strong>Android Tablet Tips:</strong> If your printer asks for a PIN when pairing, try <code>0000</code> or <code>1234</code>. Make sure Location & Bluetooth permissions are allowed for Chrome in your tablet settings.
+            <strong>Android Tablet Tips:</strong> Make sure Bluetooth and Location/Nearby Devices permissions are allowed for Chrome in your Android Tablet Settings. If your printer asks for a PIN when pairing, try <code>0000</code> or <code>1234</code>.
           </div>
         </CardContent>
       </Card>

@@ -212,7 +212,24 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
               : 'Connect & Print Bluetooth'}
           </Button>
 
-          <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:justify-between">
+          {/* Additional Options */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (sale) {
+                  import('@/lib/rawbt').then(({ printReceiptViaRawBT }) => {
+                    printReceiptViaRawBT(sale, business, paperWidth);
+                  });
+                }
+              }}
+              className="gap-1.5 w-full font-medium text-xs border-sky-600/30 text-sky-700 hover:bg-sky-50 dark:text-sky-400"
+            >
+              <Printer className="h-3.5 w-3.5 text-sky-600" />
+              RawBT Android
+            </Button>
+
             <Button
               type="button"
               variant="outline"
@@ -222,7 +239,9 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
               <Printer className="h-3.5 w-3.5 text-muted-foreground" />
               System Print
             </Button>
+          </div>
 
+          <DialogFooter className="pt-1">
             <Button
               type="button"
               variant="secondary"

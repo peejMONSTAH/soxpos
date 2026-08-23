@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Sale, Business } from '@/types/database.types';
-import { PrintableReceipt, ReceiptWidth } from '@/components/sales/PrintableReceipt';
-import { generatePlainTextReceipt } from '@/lib/escpos';
+import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
+import { generatePlainTextReceipt, ReceiptPaperWidth } from '@/lib/escpos';
+import { usePrinterStore } from '@/stores/printerStore';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,16 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, Check, ShoppingCart, Copy, Download, FileText } from 'lucide-react';
+import {
+  Printer,
+  Check,
+  ShoppingCart,
+  Copy,
+  Download,
+  FileText,
+  Bluetooth,
+  BluetoothConnected,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ReceiptModalProps {
@@ -25,15 +35,55 @@ interface ReceiptModalProps {
 
 export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalProps) {
   const receiptRef = useRef<HTMLDivElement>(null);
-  const [paperWidth, setPaperWidth] = useState<ReceiptWidth>('80mm');
 
-  const handlePrint = useReactToPrint({
+  const {
+    isConnected,
+    isConnecting,
+    isPrinting,
+    deviceName,
+    paperWidth: storedPaperWidth,
+    autoPrintOnSale,
+    connect: connectPrinter,
+    printReceipt: printBtReceipt,
+  } = usePrinterStore();
+
+  const [paperWidth, setPaperWidth] = useState<ReceiptPaperWidth>(storedPaperWidth || '80mm');
+  const autoPrintedRef = useRef<string | null>(null);
+
+  // Sync stored default paper width
+  useEffect(() => {
+    if (storedPaperWidth) {
+      setPaperWidth(storedPaperWidth);
+    }
+  }, [storedPaperWidth]);
+
+  // Handle Auto-print on completed sale if configured
+  useEffect(() => {
+    if (isOpen && sale && autoPrintOnSale && isConnected && autoPrintedRef.current !== sale.id) {
+      autoPrintedRef.current = sale.id;
+      printBtReceipt(sale, business);
+    }
+  }, [isOpen, sale, autoPrintOnSale, isConnected, business, printBtReceipt]);
+
+  const handleSystemPrint = useReactToPrint({
     contentRef: receiptRef,
     documentTitle: sale ? `Receipt-${sale.receipt_number}` : 'Receipt',
     onAfterPrint: () => {
       toast.success('Print job sent successfully');
     },
   });
+
+  const handleBluetoothPrint = async () => {
+    if (!sale) return;
+    if (!isConnected) {
+      const ok = await connectPrinter();
+      if (ok) {
+        await printBtReceipt(sale, business);
+      }
+      return;
+    }
+    await printBtReceipt(sale, business);
+  };
 
   const handleCopyRawText = () => {
     if (!sale) return;
@@ -102,7 +152,7 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
         </div>
 
         {/* Scrollable Receipt Preview */}
-        <div className="py-2 overflow-y-auto max-h-[50vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
+        <div className="py-2 overflow-y-auto max-h-[46vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
           <PrintableReceipt
             ref={receiptRef}
             sale={sale}
@@ -138,27 +188,52 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
           </div>
         </div>
 
-        <DialogFooter className="grid grid-cols-2 gap-2 pt-2 sm:justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePrint}
-            className="gap-1.5 w-full font-medium"
-          >
-            <Printer className="h-4 w-4" />
-            Print ({paperWidth})
-          </Button>
-
+        {/* Printing Action Buttons */}
+        <div className="space-y-2 pt-1 border-t border-border">
+          {/* Bluetooth Print Button */}
           <Button
             type="button"
             variant="emerald"
-            onClick={onClose}
-            className="gap-1.5 w-full font-bold"
+            onClick={handleBluetoothPrint}
+            disabled={isPrinting || isConnecting}
+            className="w-full gap-2 font-bold shadow-xs py-2.5"
           >
-            <ShoppingCart className="h-4 w-4" />
-            New Sale
+            {isConnected ? (
+              <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+            ) : (
+              <Bluetooth className="h-4 w-4" />
+            )}
+            {isPrinting
+              ? 'Sending to Bluetooth Printer...'
+              : isConnecting
+              ? 'Connecting Bluetooth...'
+              : isConnected
+              ? `Bluetooth Print (${deviceName || 'Thermal'})`
+              : 'Connect & Print Bluetooth'}
           </Button>
-        </DialogFooter>
+
+          <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSystemPrint}
+              className="gap-1.5 w-full font-medium text-xs"
+            >
+              <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+              System Print
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              className="gap-1.5 w-full font-bold text-xs"
+            >
+              <ShoppingCart className="h-3.5 w-3.5" />
+              New Sale
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

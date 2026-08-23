@@ -1,16 +1,17 @@
 import { Sale, Business } from '@/types/database.types';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
+import { ReadingReportData } from '@/lib/export-utils';
 
 /**
  * ESC/POS Control Codes
  */
 export const ESC_POS_CODES = {
-  INIT: '\x1B\x40',          // Initialize printer
-  ALIGN_LEFT: '\x1B\x61\x00', // Align left
-  ALIGN_CENTER: '\x1B\x61\x01', // Align center
-  ALIGN_RIGHT: '\x1B\x61\x02', // Align right
-  BOLD_ON: '\x1B\x45\x01',    // Bold on
-  BOLD_OFF: '\x1B\x45\x00',   // Bold off
+  INIT: '\x1B\x40',             // Initialize printer
+  ALIGN_LEFT: '\x1B\x61\x00',    // Align left
+  ALIGN_CENTER: '\x1B\x61\x01',  // Align center
+  ALIGN_RIGHT: '\x1B\x61\x02',   // Align right
+  BOLD_ON: '\x1B\x45\x01',       // Bold on
+  BOLD_OFF: '\x1B\x45\x00',      // Bold off
   DOUBLE_HEIGHT_ON: '\x1B\x21\x10',
   DOUBLE_WIDTH_ON: '\x1B\x21\x20',
   NORMAL: '\x1B\x21\x00',
@@ -152,4 +153,147 @@ export function generateEscPosBinary(
     ESC_POS_CODES.FEED_AND_CUT
   );
   return rawBytes;
+}
+
+/**
+ * Formats an X or Z reading plain text report suitable for thermal printing
+ */
+export function generatePlainTextReading(
+  report: ReadingReportData,
+  width: ReceiptPaperWidth = '80mm'
+): string {
+  const maxCols = width === '58mm' ? 32 : 48;
+  const lineDivider = '-'.repeat(maxCols);
+  const doubleDivider = '='.repeat(maxCols);
+
+  const padBoth = (text: string) => {
+    if (text.length >= maxCols) return text.substring(0, maxCols);
+    const leftPad = Math.floor((maxCols - text.length) / 2);
+    const rightPad = maxCols - text.length - leftPad;
+    return ' '.repeat(leftPad) + text + ' '.repeat(rightPad);
+  };
+
+  const justify = (left: string, right: string) => {
+    const space = maxCols - left.length - right.length;
+    if (space < 1) {
+      return left.substring(0, maxCols - right.length - 1) + ' ' + right;
+    }
+    return left + ' '.repeat(space) + right;
+  };
+
+  const lines: string[] = [];
+
+  lines.push(padBoth(report.businessName.toUpperCase()));
+  lines.push(padBoth(report.title));
+  lines.push(doubleDivider);
+
+  lines.push(justify('Date/Time:', formatDateTime(report.generatedAt)));
+  lines.push(justify('Cashier:', report.cashierName));
+  if (report.shiftStart) {
+    lines.push(justify('Shift Started:', formatDateTime(report.shiftStart)));
+  }
+  if (report.shiftEnd) {
+    lines.push(justify('Shift Ended:', formatDateTime(report.shiftEnd)));
+  }
+  lines.push(justify('Transactions:', String(report.transactionCount)));
+  lines.push(lineDivider);
+
+  lines.push(justify('Gross Sales:', formatPeso(report.grossSales)));
+  if (report.totalDiscounts > 0) {
+    lines.push(justify('Discounts Given:', `-${formatPeso(report.totalDiscounts)}`));
+  }
+  lines.push(doubleDivider);
+  lines.push(justify('NET SALES:', formatPeso(report.netSales)));
+  lines.push(doubleDivider);
+
+  lines.push(padBoth('-- PAYMENT BREAKDOWN --'));
+  lines.push(justify('Cash:', formatPeso(report.payments.cash)));
+  lines.push(justify('GCash:', formatPeso(report.payments.gcash)));
+  lines.push(justify('Maya:', formatPeso(report.payments.maya)));
+  if (report.payments.other > 0) {
+    lines.push(justify('Other:', formatPeso(report.payments.other)));
+  }
+  lines.push(lineDivider);
+
+  lines.push(padBoth('-- CASH DRAWER AUDIT --'));
+  lines.push(justify('Starting Float:', formatPeso(report.startingCash || 0)));
+  lines.push(justify('Cash Sales Added:', `+${formatPeso(report.payments.cash)}`));
+  lines.push(doubleDivider);
+  lines.push(justify('EXPECTED CASH:', formatPeso(report.expectedCashInDrawer || 0)));
+  lines.push(doubleDivider);
+
+  lines.push(padBoth(`*** END OF ${report.type}-READING ***`));
+  lines.push(padBoth('System Generated Audit Report'));
+  lines.push('\n\n');
+
+  return lines.join('\n');
+}
+
+/**
+ * Encodes Reading Report into Uint8Array ESC/POS binary stream
+ */
+export function generateReadingEscPosBinary(
+  report: ReadingReportData,
+  width: ReceiptPaperWidth = '80mm'
+): Uint8Array {
+  const plainText = generatePlainTextReading(report, width);
+  const textEncoder = new TextEncoder();
+  return textEncoder.encode(
+    ESC_POS_CODES.INIT +
+    plainText +
+    ESC_POS_CODES.FEED_AND_CUT
+  );
+}
+
+/**
+ * Generates a diagnostic Test Print receipt
+ */
+export function generateTestReceiptBinary(
+  businessName = 'SOX POS',
+  width: ReceiptPaperWidth = '80mm'
+): Uint8Array {
+  const maxCols = width === '58mm' ? 32 : 48;
+  const lineDivider = '-'.repeat(maxCols);
+  const doubleDivider = '='.repeat(maxCols);
+
+  const padBoth = (text: string) => {
+    if (text.length >= maxCols) return text.substring(0, maxCols);
+    const leftPad = Math.floor((maxCols - text.length) / 2);
+    const rightPad = maxCols - text.length - leftPad;
+    return ' '.repeat(leftPad) + text + ' '.repeat(rightPad);
+  };
+
+  const justify = (left: string, right: string) => {
+    const space = maxCols - left.length - right.length;
+    if (space < 1) {
+      return left.substring(0, maxCols - right.length - 1) + ' ' + right;
+    }
+    return left + ' '.repeat(space) + right;
+  };
+
+  const lines: string[] = [
+    padBoth(businessName.toUpperCase()),
+    padBoth('BLUETOOTH PRINTER TEST'),
+    doubleDivider,
+    justify('Status:', 'CONNECTED [OK]'),
+    justify('Paper Width:', width),
+    justify('Column Width:', `${maxCols} Characters`),
+    justify('Date/Time:', formatDateTime(new Date().toISOString())),
+    lineDivider,
+    padBoth('0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+    padBoth('Testing ESC/POS Alignment:'),
+    padBoth('<< CENTER ALIGNED >>'),
+    justify('Left Item', 'Right Price'),
+    doubleDivider,
+    padBoth('Bluetooth Thermal Print Success!'),
+    padBoth('Ready for Android POS Sales'),
+    '\n\n',
+  ];
+
+  const textEncoder = new TextEncoder();
+  return textEncoder.encode(
+    ESC_POS_CODES.INIT +
+    lines.join('\n') +
+    ESC_POS_CODES.FEED_AND_CUT
+  );
 }

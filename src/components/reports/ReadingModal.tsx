@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Sale, Shift, Business } from '@/types/database.types';
 import { computeReadingReport, ReadingReportData } from '@/lib/export-utils';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
+import { ReceiptPaperWidth, generatePlainTextReading } from '@/lib/escpos';
+import { usePrinterStore } from '@/stores/printerStore';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +15,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, Download, FileText, CheckCircle2 } from 'lucide-react';
+import {
+  Printer,
+  Download,
+  FileText,
+  Bluetooth,
+  BluetoothConnected,
+  Copy,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useQuery } from '@tanstack/react-query';
@@ -39,7 +48,24 @@ export function ReadingModal({
   cashierName,
 }: ReadingModalProps) {
   const reportRef = useRef<HTMLDivElement>(null);
-  const [paperWidth, setPaperWidth] = useState<'58mm' | '80mm'>('80mm');
+
+  const {
+    isConnected,
+    isConnecting,
+    isPrinting,
+    deviceName,
+    paperWidth: storedPaperWidth,
+    connect: connectPrinter,
+    printReading: printBtReading,
+  } = usePrinterStore();
+
+  const [paperWidth, setPaperWidth] = useState<ReceiptPaperWidth>(storedPaperWidth || '80mm');
+
+  useEffect(() => {
+    if (storedPaperWidth) {
+      setPaperWidth(storedPaperWidth);
+    }
+  }, [storedPaperWidth]);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
@@ -56,7 +82,7 @@ export function ReadingModal({
     products,
   });
 
-  const handlePrint = useReactToPrint({
+  const handleSystemPrint = useReactToPrint({
     contentRef: reportRef,
     documentTitle: `${type}-Reading-${new Date().toISOString().split('T')[0]}`,
     onAfterPrint: () => {
@@ -64,36 +90,26 @@ export function ReadingModal({
     },
   });
 
-  const handleDownloadSummary = () => {
-    const lines = [
-      '========================================',
-      report.businessName.toUpperCase(),
-      report.title,
-      '========================================',
-      `Date/Time: ${formatDateTime(report.generatedAt)}`,
-      `Cashier:   ${report.cashierName}`,
-      report.shiftStart ? `Shift In:  ${formatDateTime(report.shiftStart)}` : '',
-      report.shiftEnd ? `Shift Out: ${formatDateTime(report.shiftEnd)}` : '',
-      '----------------------------------------',
-      `Total Transactions: ${report.transactionCount}`,
-      `Gross Sales:        ${formatPeso(report.grossSales)}`,
-      `Discounts Given:   -${formatPeso(report.totalDiscounts)}`,
-      `NET SALES:          ${formatPeso(report.netSales)}`,
-      '----------------------------------------',
-      'PAYMENT BREAKDOWN:',
-      `  Cash:             ${formatPeso(report.payments.cash)}`,
-      `  GCash:            ${formatPeso(report.payments.gcash)}`,
-      `  Maya:             ${formatPeso(report.payments.maya)}`,
-      `  Other:            ${formatPeso(report.payments.other)}`,
-      '----------------------------------------',
-      `Store Sales:        ${formatPeso(report.storeRevenue)}`,
-      `Kitchen Sales:      ${formatPeso(report.kitchenRevenue)}`,
-      '========================================',
-      `Expected Cash in Drawer: ${formatPeso(report.expectedCashInDrawer || 0)}`,
-      '========================================',
-    ].filter(Boolean);
+  const handleBluetoothPrint = async () => {
+    if (!isConnected) {
+      const ok = await connectPrinter();
+      if (ok) {
+        await printBtReading(report);
+      }
+      return;
+    }
+    await printBtReading(report);
+  };
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const handleCopyPlainText = () => {
+    const text = generatePlainTextReading(report, paperWidth);
+    navigator.clipboard.writeText(text);
+    toast.success('Report text copied to clipboard');
+  };
+
+  const handleDownloadSummary = () => {
+    const text = generatePlainTextReading(report, paperWidth);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -151,7 +167,7 @@ export function ReadingModal({
         </div>
 
         {/* Printable Report Preview */}
-        <div className="py-2 overflow-y-auto max-h-[50vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
+        <div className="py-2 overflow-y-auto max-h-[46vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
           <div
             ref={reportRef}
             className={`printable-report-container bg-white text-black p-3.5 font-mono ${widthClass} mx-auto border border-dashed border-gray-300 shadow-sm print:shadow-none print:border-none print:p-0`}
@@ -256,27 +272,77 @@ export function ReadingModal({
           </div>
         </div>
 
-        <DialogFooter className="grid grid-cols-2 gap-2 pt-2 sm:justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDownloadSummary}
-            className="gap-1.5 w-full font-medium"
-          >
-            <Download className="h-4 w-4" />
-            Download .txt
-          </Button>
+        {/* Raw Export Quick Actions */}
+        <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+            Report Text:
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopyPlainText}
+              className="flex items-center gap-1 hover:text-foreground hover:underline"
+            >
+              <Copy className="h-3 w-3" />
+              Copy
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={handleDownloadSummary}
+              className="flex items-center gap-1 hover:text-foreground hover:underline"
+            >
+              <Download className="h-3 w-3" />
+              Download .txt
+            </button>
+          </div>
+        </div>
 
+        {/* Printing Action Buttons */}
+        <div className="space-y-2 pt-1 border-t border-border">
           <Button
             type="button"
             variant="emerald"
-            onClick={handlePrint}
-            className="gap-1.5 w-full font-bold"
+            onClick={handleBluetoothPrint}
+            disabled={isPrinting || isConnecting}
+            className="w-full gap-2 font-bold shadow-xs py-2.5"
           >
-            <Printer className="h-4 w-4" />
-            Print Report
+            {isConnected ? (
+              <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+            ) : (
+              <Bluetooth className="h-4 w-4" />
+            )}
+            {isPrinting
+              ? `Printing ${type}-Reading...`
+              : isConnecting
+              ? 'Connecting Bluetooth...'
+              : isConnected
+              ? `Bluetooth Print ${type}-Reading (${deviceName || 'Thermal'})`
+              : `Connect & Print ${type}-Reading`}
           </Button>
-        </DialogFooter>
+
+          <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSystemPrint}
+              className="gap-1.5 w-full font-medium text-xs"
+            >
+              <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+              System Print
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              className="w-full text-xs font-semibold"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -7,15 +7,17 @@ import { useShiftStore } from '@/stores/shiftStore';
 import { ShiftStatusBadge } from './ShiftStatusBadge';
 import { UserRoleSwitcher } from './UserRoleSwitcher';
 import { ThemeToggle } from './ThemeToggle';
-import { Store, Wifi, WifiOff, LogOut } from 'lucide-react';
+import { Store, Wifi, WifiOff, LogOut, Bluetooth } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { usePrinterStore } from '@/stores/printerStore';
 
 export function Header() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { fetchActiveShift } = useShiftStore();
+  const { isConnected: isPrinterConnected, deviceName: printerName } = usePrinterStore();
   const [isOnline, setIsOnline] = useState(true);
 
   const handleLogout = async () => {
@@ -89,6 +91,24 @@ export function Header() {
             </span>
           )}
         </div>
+
+        {/* Bluetooth Thermal Printer Indicator */}
+        <Link
+          href="/settings"
+          title={isPrinterConnected ? `Bluetooth Printer: ${printerName || 'Connected'}` : 'Bluetooth Thermal Printer: Not Connected (Click to Setup)'}
+          className="hidden sm:flex items-center gap-1 pl-2 border-l border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {isPrinterConnected ? (
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+              <Bluetooth className="h-3.5 w-3.5 text-emerald-600" />
+              <span className="hidden lg:inline">{printerName || 'Printer'}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-muted-foreground hover:text-amber-600">
+              <Bluetooth className="h-3.5 w-3.5 opacity-60" />
+            </span>
+          )}
+        </Link>
       </div>
 
       {/* Right controls */}

@@ -32,6 +32,7 @@ import {
   Apple,
   HelpCircle,
   Radio,
+  Terminal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -61,9 +62,16 @@ export default function SettingsPage() {
 
   const [platform, setPlatform] = useState<PlatformCapabilities | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [diagLogs, setDiagLogs] = useState<string[]>([]);
+
+  const addLog = (msg: string) => {
+    setDiagLogs((prev) => [...prev.slice(-6), `${new Date().toLocaleTimeString()}: ${msg}`]);
+  };
 
   useEffect(() => {
     setPlatform(getPlatformCapabilities());
+    const hasBt = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+    addLog(`Environment loaded. Web Bluetooth present: ${hasBt ? 'YES' : 'NO'}`);
   }, []);
 
   // Simple local store form states
@@ -121,8 +129,31 @@ export default function SettingsPage() {
     },
   });
 
-  const handlePairClick = () => {
-    connectPrinter();
+  const handlePairClick = async () => {
+    addLog('Pair button tapped.');
+    const hasBt = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+
+    if (!hasBt) {
+      const reason = 'navigator.bluetooth is not available. Please make sure you are using Bluefy (iOS) or Chrome (Android) over HTTPS.';
+      addLog(`ERROR: ${reason}`);
+      toast.error('Bluetooth Not Supported', { description: reason });
+      alert(reason);
+      return;
+    }
+
+    addLog('Launching Bluetooth scan...');
+    try {
+      const ok = await connectPrinter();
+      if (ok) {
+        addLog('Bluetooth connected successfully!');
+      } else {
+        const lastErr = bluetoothPrinterService.getState().error;
+        addLog(`Scan result: ${lastErr || 'Picker closed'}`);
+      }
+    } catch (err: any) {
+      addLog(`Exception: ${err?.message || err}`);
+      alert(`Bluetooth Exception: ${err?.message || err}`);
+    }
   };
 
   const handleRawBTTest = () => {
@@ -159,7 +190,8 @@ export default function SettingsPage() {
     }
   };
 
-  const isBluetoothSupported = platform?.isWebBluetoothSupported ?? false;
+  const isBluetoothSupported =
+    typeof navigator !== 'undefined' && 'bluetooth' in navigator;
   const isIOSPlatform = platform?.isIOS ?? false;
 
   return (
@@ -208,14 +240,14 @@ export default function SettingsPage() {
                   BLE Paired: {deviceName || 'Thermal Printer'}
                 </span>
               ) : isBluetoothSupported ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-border">
-                  <Radio className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
+                  <Radio className="h-3.5 w-3.5 text-emerald-600 animate-pulse" />
                   Web Bluetooth Ready
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-700">
                   <Printer className="h-3.5 w-3.5 text-sky-600" />
-                  System / AirPrint Ready
+                  AirPrint / System Mode
                 </span>
               )}
             </div>
@@ -223,39 +255,17 @@ export default function SettingsPage() {
         </CardHeader>
 
         <CardContent className="p-5 space-y-5">
-          {/* iOS Platform Notice Banner */}
-          {isIOSPlatform && !isBluetoothSupported && (
-            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs">
-              <Apple className="h-4 w-4 shrink-0 mt-0.5 text-zinc-900 dark:text-zinc-100" />
-              <div className="space-y-1">
-                <p className="font-bold">Apple iOS Detected (iPhone / iPad)</p>
-                <p className="text-emerald-800 dark:text-emerald-300 leading-relaxed">
-                  Safari and Chrome on iOS use <strong>AirPrint / System Print</strong> by default. For direct Bluetooth ESC/POS on iPad/iPhone without AirPrint, open your POS inside the free <strong>Bluefy Web BLE Browser</strong> from the App Store.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowGuide(true)}
-                  className="font-bold underline hover:text-emerald-600 inline-flex items-center gap-1 mt-0.5"
-                >
-                  View iOS Setup Guide &rarr;
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Web Bluetooth Controls */}
+          {/* Web Bluetooth Connection Card */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg bg-muted/40 border border-border">
             <div>
               <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Bluetooth className="h-4 w-4 text-emerald-600" />
-                Direct Web Bluetooth (BLE Thermal)
+                Direct Web Bluetooth (RP21UB / BLE Thermal)
               </h4>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {isConnected
-                  ? `Active printer paired: ${deviceName || 'BLE Thermal Printer'}`
-                  : isBluetoothSupported
-                  ? 'Pair portable Bluetooth thermal printers (POS-58, GOOJPRT, Xprinter, MPT).'
-                  : 'Web Bluetooth requires Chrome on Android/Desktop or Bluefy on iOS.'}
+                  ? `Active printer paired: ${deviceName || 'RP21 Thermal Printer'}`
+                  : 'Pair your RP21UB / POS-58 thermal printer directly inside Bluefy (iOS) or Chrome (Android).'}
               </p>
             </div>
 
@@ -290,11 +300,39 @@ export default function SettingsPage() {
                   size="sm"
                   onClick={handlePairClick}
                   disabled={isConnecting}
-                  className="gap-1.5 text-xs font-bold"
+                  className="gap-1.5 text-xs font-bold shadow-xs"
                 >
                   <Bluetooth className="h-3.5 w-3.5" />
-                  {isConnecting ? 'Searching Devices...' : 'Pair & Connect Printer'}
+                  {isConnecting ? 'Searching...' : 'Pair & Connect Printer'}
                 </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Live Diagnostic Status Box */}
+          <div className="p-3 rounded-lg bg-zinc-900 text-zinc-100 dark:bg-zinc-950 border border-zinc-800 text-[11px] font-mono space-y-1.5">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-1 text-zinc-400 text-[10px]">
+              <span className="flex items-center gap-1 font-bold">
+                <Terminal className="h-3.5 w-3.5 text-emerald-400" />
+                Live Bluetooth Diagnostic Console
+              </span>
+              <span>HTTPS: {typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'YES' : 'NO'}</span>
+            </div>
+            <div className="space-y-0.5 pt-0.5">
+              <div className="text-zinc-300">
+                &bull; Web Bluetooth Engine: <strong className={isBluetoothSupported ? 'text-emerald-400' : 'text-amber-400'}>{isBluetoothSupported ? 'Active & Ready' : 'Unavailable (Check Browser)'}</strong>
+              </div>
+              <div className="text-zinc-400 text-[10px] truncate">
+                &bull; User-Agent: {typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}
+              </div>
+              {diagLogs.length > 0 && (
+                <div className="pt-1 border-t border-zinc-800/80 text-zinc-300 space-y-0.5">
+                  {diagLogs.map((log, idx) => (
+                    <div key={idx} className="text-emerald-300/90 text-[10px]">
+                      &gt; {log}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -304,10 +342,10 @@ export default function SettingsPage() {
             <div>
               <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
                 <Printer className="h-4 w-4 text-emerald-600" />
-                AirPrint / System Print (Universal for iOS, Android & Desktop)
+                AirPrint / System Print (Universal for iOS & Desktop)
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Prints to any AirPrint receipt printer, Wi-Fi/Ethernet thermal printer, or standard desktop printer.
+                Prints to any AirPrint receipt printer or standard system printer.
               </p>
             </div>
             <Button
@@ -318,11 +356,11 @@ export default function SettingsPage() {
               className="gap-1.5 text-xs shrink-0 font-medium border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
             >
               <FileCheck2 className="h-3.5 w-3.5" />
-              Test AirPrint / System Print
+              Test System Print
             </Button>
           </div>
 
-          {/* RawBT Companion Option for Android Classic SPP */}
+          {/* RawBT Companion Option for Android */}
           <div className="p-3.5 rounded-lg border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
@@ -330,7 +368,7 @@ export default function SettingsPage() {
                 Android RawBT Companion (Classic Bluetooth SPP & USB)
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                If using Android with a Bluetooth Classic or USB thermal printer, print instantly via the free <strong>RawBT</strong> app.
+                If using Android with a Bluetooth Classic or USB printer, print instantly via the free <strong>RawBT</strong> app.
               </p>
             </div>
             <Button
@@ -362,8 +400,8 @@ export default function SettingsPage() {
                       : 'border-border bg-muted/20 text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <p className="text-xs font-semibold">58mm (2-inch)</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Compact mobile roll</p>
+                  <p className="text-xs font-semibold">58mm (RP21 Roll)</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">RP21UB / mobile roll</p>
                 </button>
 
                 <button

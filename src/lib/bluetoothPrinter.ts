@@ -261,6 +261,30 @@ class BluetoothPrinterService {
     });
   }
 
+  private async writeChunk(char: any, chunk: Uint8Array): Promise<void> {
+    if (typeof char.writeValue === 'function') {
+      try {
+        await char.writeValue(chunk);
+        return;
+      } catch (err) {
+        console.warn('writeValue failed, trying fallback:', err);
+      }
+    }
+    if (typeof char.writeValueWithoutResponse === 'function') {
+      try {
+        await char.writeValueWithoutResponse(chunk);
+        return;
+      } catch (err) {
+        console.warn('writeValueWithoutResponse failed, trying writeValueWithResponse:', err);
+      }
+    }
+    if (typeof char.writeValueWithResponse === 'function') {
+      await char.writeValueWithResponse(chunk);
+      return;
+    }
+    throw new Error('No write method supported by Bluetooth characteristic');
+  }
+
   public async printBytes(bytes: Uint8Array, chunkSize = 20): Promise<void> {
     if (!this.writeCharacteristic) {
       const ok = await this.reconnect();
@@ -277,25 +301,11 @@ class BluetoothPrinterService {
 
       for (let offset = 0; offset < totalLen; offset += chunkSize) {
         const chunk = bytes.slice(offset, Math.min(offset + chunkSize, totalLen));
+        await this.writeChunk(char, chunk);
 
-        // Use the most compatible write strategy for Bluefy & Chrome
-        if (typeof char.writeValueWithoutResponse === 'function' && char.properties?.writeWithoutResponse) {
-          try {
-            await char.writeValueWithoutResponse(chunk);
-          } catch {
-            if (typeof char.writeValue === 'function') {
-              await char.writeValue(chunk);
-            }
-          }
-        } else if (typeof char.writeValue === 'function') {
-          await char.writeValue(chunk);
-        } else if (typeof char.writeValueWithResponse === 'function') {
-          await char.writeValueWithResponse(chunk);
-        }
-
-        // 25ms delay between BLE packets to prevent printer buffer overrun on 58mm
+        // 20ms pacing delay between BLE packets
         if (offset + chunkSize < totalLen) {
-          await new Promise((res) => setTimeout(res, 25));
+          await new Promise((res) => setTimeout(res, 20));
         }
       }
     } catch (err: any) {

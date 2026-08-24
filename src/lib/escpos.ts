@@ -143,14 +143,15 @@ export function generatePlainTextReceipt(
 export function generateEscPosBinary(
   sale: Sale,
   business?: Business | null,
-  width: ReceiptPaperWidth = '80mm'
+  width: ReceiptPaperWidth = '58mm'
 ): Uint8Array {
   const plainText = generatePlainTextReceipt(sale, business, width);
   const textEncoder = new TextEncoder();
+  const endCommands = width === '80mm' ? '\n\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n\n';
   const rawBytes = textEncoder.encode(
     ESC_POS_CODES.INIT +
     plainText +
-    ESC_POS_CODES.FEED_AND_CUT
+    endCommands
   );
   return rawBytes;
 }
@@ -234,14 +235,15 @@ export function generatePlainTextReading(
  */
 export function generateReadingEscPosBinary(
   report: ReadingReportData,
-  width: ReceiptPaperWidth = '80mm'
+  width: ReceiptPaperWidth = '58mm'
 ): Uint8Array {
   const plainText = generatePlainTextReading(report, width);
   const textEncoder = new TextEncoder();
+  const endCommands = width === '80mm' ? '\n\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n\n';
   return textEncoder.encode(
     ESC_POS_CODES.INIT +
     plainText +
-    ESC_POS_CODES.FEED_AND_CUT
+    endCommands
   );
 }
 
@@ -250,7 +252,7 @@ export function generateReadingEscPosBinary(
  */
 export function generateTestReceiptBinary(
   businessName = 'SOX POS',
-  width: ReceiptPaperWidth = '80mm'
+  width: ReceiptPaperWidth = '58mm'
 ): Uint8Array {
   const maxCols = width === '58mm' ? 32 : 48;
   const lineDivider = '-'.repeat(maxCols);
@@ -286,14 +288,15 @@ export function generateTestReceiptBinary(
     justify('Left Item', 'Right Price'),
     doubleDivider,
     padBoth('Bluetooth Thermal Print Success!'),
-    padBoth('Ready for Android POS Sales'),
-    '\n\n',
+    padBoth('RP21UB Thermal Receipt Ready'),
+    '\n\n\n\n',
   ];
 
   const textEncoder = new TextEncoder();
+  const endCommands = width === '80mm' ? '\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n';
   return textEncoder.encode(
     ESC_POS_CODES.INIT +
     lines.join('\n') +
-    ESC_POS_CODES.FEED_AND_CUT
+    endCommands
   );
 }

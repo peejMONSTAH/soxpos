@@ -92,15 +92,18 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
   const handleBluetoothPrint = async () => {
     if (!sale) return;
 
-    if (!isConnected) {
-      const ok = await bluetoothPrinterService.connect();
-      if (ok) {
-        await printBtReceipt(sale, business);
+    try {
+      if (!isConnected) {
+        const ok = await bluetoothPrinterService.connect();
+        if (!ok) return;
       }
-      return;
-    }
 
-    await printBtReceipt(sale, business);
+      await printBtReceipt(sale, business);
+    } catch (err: any) {
+      console.error('Bluetooth print error:', err);
+      toast.error('Print Error', { description: err?.message || 'Failed to print receipt' });
+      alert(`Print Error: ${err?.message || err}`);
+    }
   };
 
   const handleShareReceipt = async () => {

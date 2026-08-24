@@ -7,6 +7,7 @@ import { useShiftStore } from '@/stores/shiftStore';
 import { ShiftStatusBadge } from './ShiftStatusBadge';
 import { UserRoleSwitcher } from './UserRoleSwitcher';
 import { ThemeToggle } from './ThemeToggle';
+import { MobileMenuDrawer } from './MobileMenuDrawer';
 import { Store, Wifi, WifiOff, LogOut, Bluetooth } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -60,9 +61,12 @@ export function Header() {
   }, [user, fetchActiveShift]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 sm:px-6 backdrop-blur-md">
-      {/* Left store branding */}
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-3 sm:px-6 backdrop-blur-md">
+      {/* Left store branding & Mobile Drawer Menu Trigger */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile Hamburger Drawer Menu */}
+        <MobileMenuDrawer />
+
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-bold shadow-xs">
             <Store className="h-4 w-4" />
@@ -71,7 +75,7 @@ export function Header() {
             <div className="text-sm font-bold tracking-tight text-foreground leading-none">
               SOX POS
             </div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground hidden xs:block">
               Local Sales & Inventory
             </div>
           </div>
@@ -92,27 +96,28 @@ export function Header() {
           )}
         </div>
 
-        {/* Bluetooth Thermal Printer Indicator */}
+        {/* Bluetooth Thermal Printer Indicator (Accessible on Mobile & Desktop) */}
         <Link
           href="/settings"
           title={isPrinterConnected ? `Bluetooth Printer: ${printerName || 'Connected'}` : 'Bluetooth Thermal Printer: Not Connected (Click to Setup)'}
-          className="hidden sm:flex items-center gap-1 pl-2 border-l border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 pl-1.5 sm:pl-2 sm:border-l border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           {isPrinterConnected ? (
-            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-              <Bluetooth className="h-3.5 w-3.5 text-emerald-600" />
-              <span className="hidden lg:inline">{printerName || 'Printer'}</span>
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+              <Bluetooth className="h-3.5 w-3.5 text-emerald-600 animate-pulse" />
+              <span className="text-[10px] sm:text-xs">{printerName || 'Printer'}</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-muted-foreground hover:text-amber-600">
+            <span className="flex items-center gap-1 text-muted-foreground hover:text-emerald-600 px-1.5 py-0.5 rounded">
               <Bluetooth className="h-3.5 w-3.5 opacity-60" />
+              <span className="text-[10px] hidden sm:inline">Printer</span>
             </span>
           )}
         </Link>
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Active Shift status */}
         <ShiftStatusBadge />
 

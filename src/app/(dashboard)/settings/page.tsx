@@ -130,22 +130,23 @@ export default function SettingsPage() {
   });
 
   const handlePairClick = async () => {
-    addLog('Pair button tapped.');
-    const hasBt = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+    addLog('Pair button tapped. Checking Bluetooth API...');
+    const navBt = typeof navigator !== 'undefined' ? (navigator as any).bluetooth : null;
 
-    if (!hasBt) {
-      const reason = 'navigator.bluetooth is not available. Please make sure you are using Bluefy (iOS) or Chrome (Android) over HTTPS.';
+    if (!navBt || typeof navBt.requestDevice !== 'function') {
+      const reason = 'navigator.bluetooth.requestDevice is not available in this browser. Please ensure you are opening via HTTPS in Bluefy.';
       addLog(`ERROR: ${reason}`);
       toast.error('Bluetooth Not Supported', { description: reason });
       alert(reason);
       return;
     }
 
-    addLog('Launching Bluetooth scan...');
+    addLog('Calling bluetoothPrinterService.connect()...');
     try {
-      const ok = await connectPrinter();
+      const ok = await bluetoothPrinterService.connect();
       if (ok) {
-        addLog('Bluetooth connected successfully!');
+        addLog('SUCCESS! Connected to printer.');
+        toast.success(`Bluetooth connected to ${bluetoothPrinterService.getState().deviceName || 'Printer'}`);
       } else {
         const lastErr = bluetoothPrinterService.getState().error;
         addLog(`Scan result: ${lastErr || 'Picker closed'}`);

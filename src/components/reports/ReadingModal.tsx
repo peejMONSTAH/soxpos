@@ -7,6 +7,7 @@ import { computeReadingReport, ReadingReportData } from '@/lib/export-utils';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
 import { ReceiptPaperWidth, generatePlainTextReading } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
+import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
 import {
   getPlatformCapabilities,
   PlatformCapabilities,
@@ -109,7 +110,7 @@ export function ReadingModal({
     if (!sales || !report) return;
 
     if (!isConnected) {
-      const ok = await connectPrinter();
+      const ok = await bluetoothPrinterService.connect();
       if (ok) {
         await printBtReading(report);
       }

@@ -6,6 +6,7 @@ import { Sale, Business } from '@/types/database.types';
 import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
 import { generatePlainTextReceipt, ReceiptPaperWidth } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
+import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
 import {
   getPlatformCapabilities,
   PlatformCapabilities,
@@ -92,7 +93,7 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
     if (!sale) return;
 
     if (!isConnected) {
-      const ok = await connectPrinter();
+      const ok = await bluetoothPrinterService.connect();
       if (ok) {
         await printBtReceipt(sale, business);
       }

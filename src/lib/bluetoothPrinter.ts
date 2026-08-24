@@ -101,27 +101,35 @@ class BluetoothPrinterService {
     try {
       let device: any = null;
 
-      // Direct requestDevice with zero delays to maintain iOS user gesture token
+      // Scan attempt 1: acceptAllDevices with full canonical printer UUIDs
       try {
         device = await navBluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: CANONICAL_PRINTER_SERVICES,
         });
       } catch (err1: any) {
-        if (err1?.name === 'NotFoundError' || /cancel|dismiss/i.test(err1?.message || '')) {
-          this.updateState({ isConnecting: false });
-          return false;
-        }
+        console.warn('Scan 1 (acceptAllDevices) failed, trying Scan 2 (namePrefix filter):', err1);
+        
+        // Scan attempt 2: Filter by empty namePrefix (matches any named Bluetooth device in Bluefy)
+        try {
+          device = await navBluetooth.requestDevice({
+            filters: [{ namePrefix: '' }],
+            optionalServices: CANONICAL_PRINTER_SERVICES,
+          });
+        } catch (err2: any) {
+          console.warn('Scan 2 (namePrefix) failed, trying Scan 3 (service UUID filter):', err2);
 
-        // Secondary fallback for iOS Bluefy / WebBLE
-        device = await navBluetooth.requestDevice({
-          filters: [
-            { namePrefix: '' },
-            { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] },
-            { services: ['000018f0-0000-1000-8000-00805f9b34fb'] },
-          ],
-          optionalServices: CANONICAL_PRINTER_SERVICES,
-        });
+          // Scan attempt 3: Filter by primary printer service UUIDs
+          device = await navBluetooth.requestDevice({
+            filters: [
+              { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] },
+              { services: ['000018f0-0000-1000-8000-00805f9b34fb'] },
+              { services: ['0000fee7-0000-1000-8000-00805f9b34fb'] },
+              { services: ['0000ff00-0000-1000-8000-00805f9b34fb'] },
+            ],
+            optionalServices: CANONICAL_PRINTER_SERVICES,
+          });
+        }
       }
 
       if (!device) {
@@ -142,7 +150,7 @@ class BluetoothPrinterService {
       const characteristic = await this.findWritableCharacteristic(server);
       if (!characteristic) {
         throw new Error(
-          'Connected to device, but no writable ESC/POS print channel was found. If this is a Bluetooth Classic SPP printer, use RawBT or System Print.'
+          'Connected to ' + (device.name || 'Printer') + ', but no writable ESC/POS print channel was found. Please check printer mode.'
         );
       }
 
@@ -158,19 +166,18 @@ class BluetoothPrinterService {
 
       return true;
     } catch (err: any) {
-      if (err?.name === 'NotFoundError' || /cancel|dismiss/i.test(err?.message || '')) {
-        this.updateState({ isConnecting: false });
-        return false;
-      }
-
-      const msg = err?.message || 'Bluetooth connection error';
+      const msg = err?.message || err?.name || 'Bluetooth connection error';
       console.error('Bluetooth pair error:', err);
       this.updateState({
         isConnected: false,
         isConnecting: false,
         error: msg,
       });
-      alert(`Bluetooth: ${msg}\n\nTip: Make sure the printer is turned ON, not connected to another phone/iPad, and unpair it from iPhone Settings > Bluetooth.`);
+
+      // Show clear helpful popup if pairing failed
+      if (!/cancelled|cancel|dismiss/i.test(msg)) {
+        alert(`Bluetooth Error: ${msg}\n\nTroubleshooting:\n1. Make sure RP21UB printer is turned ON (blue light on).\n2. Unpair it from iPhone Settings > Bluetooth (if paired there).\n3. Keep printer within 2 meters of iPhone.`);
+      }
       return false;
     }
   }

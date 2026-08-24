@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useReactToPrint } from 'react-to-print';
 import { dbService } from '@/lib/db';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,13 @@ import { Input } from '@/components/ui/input';
 import { usePrinterStore } from '@/stores/printerStore';
 import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
 import { printTestViaRawBT } from '@/lib/rawbt';
+import {
+  getPlatformCapabilities,
+  PlatformCapabilities,
+} from '@/lib/platform';
+import { PrinterGuideModal } from '@/components/pos/PrinterGuideModal';
+import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
+import { Sale } from '@/types/database.types';
 import {
   Store,
   Printer,
@@ -21,11 +29,15 @@ import {
   Sliders,
   FileCheck2,
   Smartphone,
+  Apple,
+  HelpCircle,
+  Radio,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
+  const testReceiptRef = useRef<HTMLDivElement>(null);
 
   const { data: business } = useQuery({
     queryKey: ['business'],
@@ -47,13 +59,11 @@ export default function SettingsPage() {
     printTest,
   } = usePrinterStore();
 
-  const [isBluetoothSupported, setIsBluetoothSupported] = useState(true);
-  const [diagnosticReason, setDiagnosticReason] = useState<string>('');
+  const [platform, setPlatform] = useState<PlatformCapabilities | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
-    const supported = bluetoothPrinterService.isSupported();
-    setIsBluetoothSupported(supported);
-    setDiagnosticReason(bluetoothPrinterService.getDiagnosticReason());
+    setPlatform(getPlatformCapabilities());
   }, []);
 
   // Simple local store form states
@@ -72,9 +82,58 @@ export default function SettingsPage() {
     }
   }, [business]);
 
+  const sampleTestSale: Sale = {
+    id: 'test-sale',
+    business_id: business?.id || 'default-biz',
+    receipt_number: 'TEST-0001',
+    user_id: 'admin',
+    user_name: 'Cashier Staff',
+    shift_id: null,
+    status: 'completed',
+    notes: null,
+    total: 250.0,
+    subtotal: 250.0,
+    discount: 0,
+    amount_paid: 500.0,
+    change: 250.0,
+    payment_method: 'cash',
+    payment_reference: null,
+    created_at: new Date().toISOString(),
+    items: [
+      {
+        id: 'item-1',
+        sale_id: 'test-sale',
+        product_id: 'p-1',
+        product_name_snapshot: 'Sample Test Product Item',
+        quantity: 2,
+        unit_price: 125.0,
+        cost_price_snapshot: 80.0,
+        subtotal: 250.0,
+      },
+    ],
+  };
+
+  const handleSystemTestPrint = useReactToPrint({
+    contentRef: testReceiptRef,
+    documentTitle: 'Test-Receipt',
+    onAfterPrint: () => {
+      toast.success('System test print sent');
+    },
+  });
+
   const handlePairClick = async () => {
-    if (!isBluetoothSupported) {
-      alert(`Bluetooth cannot start:\n\n${diagnosticReason}\n\nMake sure you are opening your POS site via HTTPS (e.g. on Vercel) inside Google Chrome on your Android tablet.`);
+    if (!platform?.isWebBluetoothSupported) {
+      if (platform?.isIOS) {
+        toast.info('iOS Web Bluetooth Notice', {
+          description: 'Apple restricts Web Bluetooth in Safari & Chrome. Use AirPrint or the free Bluefy browser.',
+          action: {
+            label: 'View Guide',
+            onClick: () => setShowGuide(true),
+          },
+        });
+        return;
+      }
+      setShowGuide(true);
       return;
     }
     await connectPrinter();
@@ -114,33 +173,63 @@ export default function SettingsPage() {
     }
   };
 
+  const isBluetoothSupported = platform?.isWebBluetoothSupported ?? false;
+  const isIOSPlatform = platform?.isIOS ?? false;
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings & Hardware</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure store profile, receipt header message, and Bluetooth thermal printer.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings & Hardware</h1>
+          <p className="text-sm text-muted-foreground">
+            Configure store profile, receipt formats, iOS AirPrint, and Bluetooth thermal printers.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setShowGuide(true)}
+          className="gap-1.5 text-xs font-semibold self-start sm:self-auto"
+        >
+          <HelpCircle className="h-4 w-4 text-emerald-600" />
+          Hardware & Printing Guide
+        </Button>
       </div>
 
-      {/* Bluetooth Thermal Printer Card */}
+      {/* Hidden container for System Test Print */}
+      <div className="hidden">
+        <PrintableReceipt
+          ref={testReceiptRef}
+          sale={sampleTestSale}
+          business={business}
+          paperWidth={paperWidth}
+        />
+      </div>
+
+      {/* Hardware & Thermal Printing Card */}
       <Card className="border-emerald-200/50 dark:border-emerald-900/40 shadow-sm">
         <CardHeader className="pb-3 border-b border-border bg-emerald-50/50 dark:bg-emerald-950/20">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <CardTitle className="text-base flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
-              <Bluetooth className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              Bluetooth Thermal Printer (Android / Chrome)
+              <Printer className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              Thermal Receipt & Wireless Hardware
             </CardTitle>
-            <div>
+            <div className="flex items-center gap-2">
               {isConnected ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                   <BluetoothConnected className="h-3.5 w-3.5 animate-pulse" />
-                  Connected: {deviceName || 'Thermal Printer'}
+                  BLE Paired: {deviceName || 'Thermal Printer'}
+                </span>
+              ) : isBluetoothSupported ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-border">
+                  <Radio className="h-3.5 w-3.5 text-emerald-600" />
+                  Web Bluetooth Ready
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                  <BluetoothOff className="h-3.5 w-3.5" />
-                  Not Connected
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-700">
+                  <Printer className="h-3.5 w-3.5 text-sky-600" />
+                  System / AirPrint Ready
                 </span>
               )}
             </div>
@@ -148,33 +237,43 @@ export default function SettingsPage() {
         </CardHeader>
 
         <CardContent className="p-5 space-y-5">
-          {!isBluetoothSupported && (
-            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Web Bluetooth Notice: {diagnosticReason}</p>
-                <p className="mt-1 text-amber-700 dark:text-amber-400">
-                  To use direct Bluetooth pairing, please make sure you open your POS through your <strong>HTTPS Vercel link</strong> inside <strong>Google Chrome</strong> on your tablet.
+          {/* iOS Platform Notice Banner */}
+          {isIOSPlatform && !isBluetoothSupported && (
+            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs">
+              <Apple className="h-4 w-4 shrink-0 mt-0.5 text-zinc-900 dark:text-zinc-100" />
+              <div className="space-y-1">
+                <p className="font-bold">Apple iOS Detected (iPhone / iPad)</p>
+                <p className="text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                  Safari and Chrome on iOS use <strong>AirPrint / System Print</strong> by default. For direct Bluetooth ESC/POS on iPad/iPhone without AirPrint, open your POS inside the free <strong>Bluefy Web BLE Browser</strong> from the App Store.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowGuide(true)}
+                  className="font-bold underline hover:text-emerald-600 inline-flex items-center gap-1 mt-0.5"
+                >
+                  View iOS Setup Guide &rarr;
+                </button>
               </div>
             </div>
           )}
 
-          {/* Connection Controls */}
+          {/* Web Bluetooth Controls */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg bg-muted/40 border border-border">
             <div>
               <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Printer className="h-4 w-4 text-emerald-600" />
-                Wireless Thermal Connection
+                <Bluetooth className="h-4 w-4 text-emerald-600" />
+                Direct Web Bluetooth (BLE Thermal)
               </h4>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {isConnected
                   ? `Active printer paired: ${deviceName || 'BLE Thermal Printer'}`
-                  : 'Pair your Bluetooth thermal printer directly inside Chrome on your tablet.'}
+                  : isBluetoothSupported
+                  ? 'Pair portable Bluetooth thermal printers (POS-58, GOOJPRT, Xprinter, MPT).'
+                  : 'Web Bluetooth requires Chrome on Android/Desktop or Bluefy on iOS.'}
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {isConnected ? (
                 <>
                   <Button
@@ -186,7 +285,7 @@ export default function SettingsPage() {
                     className="gap-1.5 text-xs font-semibold border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
                   >
                     <FileCheck2 className="h-3.5 w-3.5" />
-                    {isPrinting ? 'Printing...' : 'Test Print'}
+                    {isPrinting ? 'Printing...' : 'BLE Test'}
                   </Button>
                   <Button
                     type="button"
@@ -214,15 +313,38 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* RawBT Companion Option for Bluetooth Classic SPP printers */}
+          {/* AirPrint / System Print Option */}
+          <div className="p-3.5 rounded-lg border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
+                <Printer className="h-4 w-4 text-emerald-600" />
+                AirPrint / System Print (Universal for iOS, Android & Desktop)
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Prints to any AirPrint receipt printer, Wi-Fi/Ethernet thermal printer, or standard desktop printer.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSystemTestPrint}
+              className="gap-1.5 text-xs shrink-0 font-medium border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
+            >
+              <FileCheck2 className="h-3.5 w-3.5" />
+              Test AirPrint / System Print
+            </Button>
+          </div>
+
+          {/* RawBT Companion Option for Android Classic SPP */}
           <div className="p-3.5 rounded-lg border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
                 <Smartphone className="h-4 w-4 text-sky-600" />
-                Android RawBT Companion Option (Works with ALL Bluetooth Printers)
+                Android RawBT Companion (Classic Bluetooth SPP & USB)
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                If your printer uses Bluetooth Classic SPP or does not show in the BLE list, you can print instantly using the free <strong>RawBT</strong> app from Google Play.
+                If using Android with a Bluetooth Classic or USB thermal printer, print instantly via the free <strong>RawBT</strong> app.
               </p>
             </div>
             <Button
@@ -237,12 +359,12 @@ export default function SettingsPage() {
             </Button>
           </div>
 
-          {/* Paper Size & Hardware Settings */}
+          {/* Paper Size & Auto-Print Settings */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
             <div className="p-3.5 rounded-lg border border-border bg-card space-y-2">
               <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <Sliders className="h-3.5 w-3.5 text-muted-foreground" />
-                Thermal Paper Width
+                Thermal Paper Roll Width
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -280,7 +402,7 @@ export default function SettingsPage() {
                   Auto-Print on Checkout
                 </label>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Automatically send receipt to your Bluetooth thermal printer the moment a sale is completed.
+                  Automatically sends receipt to your paired thermal printer immediately upon completing a sale.
                 </p>
               </div>
 
@@ -299,10 +421,6 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
-          </div>
-
-          <div className="text-[11px] text-muted-foreground bg-muted/30 p-2.5 rounded-md border border-border/60">
-            <strong>Android Tablet Tips:</strong> Make sure Bluetooth and Location/Nearby Devices permissions are allowed for Chrome in your Android Tablet Settings. If your printer asks for a PIN when pairing, try <code>0000</code> or <code>1234</code>.
           </div>
         </CardContent>
       </Card>
@@ -381,6 +499,12 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Guide Modal */}
+      <PrinterGuideModal
+        isOpen={showGuide}
+        onClose={() => setShowGuide(false)}
+      />
     </div>
   );
 }

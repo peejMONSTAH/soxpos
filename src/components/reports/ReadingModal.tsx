@@ -8,6 +8,11 @@ import { formatPeso, formatDateTime } from '@/lib/formatters';
 import { ReceiptPaperWidth, generatePlainTextReading } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
 import {
+  getPlatformCapabilities,
+  PlatformCapabilities,
+} from '@/lib/platform';
+import { PrinterGuideModal } from '@/components/pos/PrinterGuideModal';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -22,6 +27,10 @@ import {
   Bluetooth,
   BluetoothConnected,
   Copy,
+  Share2,
+  HelpCircle,
+  Apple,
+  Smartphone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -60,6 +69,12 @@ export function ReadingModal({
   } = usePrinterStore();
 
   const [paperWidth, setPaperWidth] = useState<ReceiptPaperWidth>(storedPaperWidth || '80mm');
+  const [platform, setPlatform] = useState<PlatformCapabilities | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
+
+  useEffect(() => {
+    setPlatform(getPlatformCapabilities());
+  }, []);
 
   useEffect(() => {
     if (storedPaperWidth) {
@@ -91,6 +106,22 @@ export function ReadingModal({
   });
 
   const handleBluetoothPrint = async () => {
+    if (!platform?.isWebBluetoothSupported) {
+      if (platform?.isIOS) {
+        toast.info('iOS Web Bluetooth Notice', {
+          description: 'Apple restricts Bluetooth in Safari/Chrome. Opening AirPrint dialog or view iOS Guide.',
+          action: {
+            label: 'iOS Guide',
+            onClick: () => setShowGuide(true),
+          },
+        });
+        handleSystemPrint();
+        return;
+      }
+      setShowGuide(true);
+      return;
+    }
+
     if (!isConnected) {
       const ok = await connectPrinter();
       if (ok) {
@@ -99,6 +130,25 @@ export function ReadingModal({
       return;
     }
     await printBtReading(report);
+  };
+
+  const handleShareReport = async () => {
+    const text = generatePlainTextReading(report, paperWidth);
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `${type}-Reading Report - ${business?.name || 'POS'}`,
+          text: text,
+        });
+        toast.success('Report shared successfully');
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          handleCopyPlainText();
+        }
+      }
+    } else {
+      handleCopyPlainText();
+    }
   };
 
   const handleCopyPlainText = () => {
@@ -121,245 +171,337 @@ export function ReadingModal({
 
   const is58mm = paperWidth === '58mm';
   const widthClass = is58mm ? 'max-w-[240px] text-[10px]' : 'max-w-[340px] text-xs';
+  const isBluetoothAvailable = platform?.isWebBluetoothSupported ?? false;
+  const isIOSPlatform = platform?.isIOS ?? false;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md max-h-[95vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span className="font-bold text-foreground flex items-center gap-1.5">
-              <FileText className="h-5 w-5 text-emerald-600" />
-              {type}-Reading Report
-            </span>
-            <span className="text-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded">
-              {type === 'X' ? 'MID-SHIFT' : 'DAY-END'}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-md max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span className="font-bold text-foreground flex items-center gap-1.5">
+                <FileText className="h-5 w-5 text-emerald-600" />
+                {type}-Reading Report
+              </span>
+              <span className="text-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded">
+                {type === 'X' ? 'MID-SHIFT' : 'DAY-END'}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Paper Switcher */}
-        <div className="flex items-center justify-between bg-muted/40 p-1.5 rounded-lg border border-border text-xs">
-          <span className="text-muted-foreground font-medium pl-1">Thermal Format:</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPaperWidth('58mm')}
-              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
-                is58mm
-                  ? 'bg-background shadow-xs text-foreground border border-border'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              58mm
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaperWidth('80mm')}
-              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
-                !is58mm
-                  ? 'bg-background shadow-xs text-foreground border border-border'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              80mm Standard
-            </button>
+          {/* Paper Switcher */}
+          <div className="flex items-center justify-between bg-muted/40 p-1.5 rounded-lg border border-border text-xs">
+            <span className="text-muted-foreground font-medium pl-1">Thermal Format:</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPaperWidth('58mm')}
+                className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                  is58mm
+                    ? 'bg-background shadow-xs text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                58mm
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaperWidth('80mm')}
+                className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                  !is58mm
+                    ? 'bg-background shadow-xs text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                80mm
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Printable Report Preview */}
-        <div className="py-2 overflow-y-auto max-h-[46vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
-          <div
-            ref={reportRef}
-            className={`printable-report-container bg-white text-black p-3.5 font-mono ${widthClass} mx-auto border border-dashed border-gray-300 shadow-sm print:shadow-none print:border-none print:p-0`}
-            style={{ fontFamily: "'Courier New', Courier, monospace" }}
-          >
-            {/* Header */}
-            <div className="text-center pb-2 border-b border-dashed border-gray-400">
-              <h2 className="font-bold tracking-tight uppercase text-sm">{report.businessName}</h2>
-              <p className="font-bold text-[11px] mt-1">{report.title}</p>
-              <p className="text-[10px] text-gray-600 mt-0.5">{formatDateTime(report.generatedAt)}</p>
+          {/* iOS Notice if relevant */}
+          {isIOSPlatform && !isBluetoothAvailable && (
+            <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-300">
+              <div className="flex items-center gap-1.5 font-medium">
+                <Apple className="h-3.5 w-3.5 shrink-0 text-zinc-900 dark:text-zinc-100" />
+                <span>iOS Web: Tap <strong>Print Report</strong> (AirPrint)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGuide(true)}
+                className="underline hover:text-emerald-700 font-semibold flex items-center gap-0.5 shrink-0"
+              >
+                <HelpCircle className="h-3 w-3" />
+                BT Guide
+              </button>
             </div>
+          )}
 
-            {/* Shift & Staff Metadata */}
-            <div className="py-2 text-[10px] border-b border-dashed border-gray-400 space-y-0.5">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Cashier:</span>
-                <span className="font-bold">{report.cashierName}</span>
-              </div>
-              {report.shiftStart && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Shift Started:</span>
-                  <span>{formatDateTime(report.shiftStart)}</span>
+          {/* Report Paper Preview */}
+          <div className="py-2 overflow-y-auto max-h-[44vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
+            <div
+              ref={reportRef}
+              className={`printable-report-container bg-white text-black p-3 font-mono ${widthClass} mx-auto border border-dashed border-gray-300 shadow-sm print:shadow-none print:border-none print:p-0`}
+              style={{ fontFamily: "'Courier New', Courier, monospace" }}
+            >
+              {/* Header */}
+              <div className="text-center pb-2 border-b border-dashed border-gray-400">
+                <h2 className="font-bold uppercase text-xs">{report.businessName}</h2>
+                {business?.address && (
+                  <p className="text-[9px] text-gray-600">{business.address}</p>
+                )}
+                <div className="mt-1 font-bold text-xs bg-black text-white py-0.5 px-1 inline-block">
+                  *** {report.type}-READING REPORT ***
                 </div>
-              )}
-              {report.shiftEnd && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Shift Ended:</span>
-                  <span>{formatDateTime(report.shiftEnd)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-gray-600">Transactions:</span>
-                <span className="font-bold">{report.transactionCount}</span>
+                <p className="text-[9px] text-gray-500 mt-0.5">
+                  {report.type === 'X' ? 'MID-DAY AUDIT' : 'OFFICIAL END-OF-DAY'}
+                </p>
               </div>
-            </div>
 
-            {/* Sales Summary */}
-            <div className="py-2 text-[10px] border-b border-dashed border-gray-400 space-y-0.5">
-              <div className="flex justify-between">
-                <span>Gross Sales:</span>
-                <span>{formatPeso(report.grossSales)}</span>
+              {/* Metadata */}
+              <div className="py-1.5 text-[9px] border-b border-dashed border-gray-400 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>Generated:</span>
+                  <span>{formatDateTime(report.generatedAt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Cashier:</span>
+                  <span className="font-bold">{report.cashierName}</span>
+                </div>
+                {report.shiftStart && (
+                  <div className="flex justify-between">
+                    <span>Period:</span>
+                    <span>{formatDateTime(report.shiftStart).split(' ')[1]} - {report.shiftEnd ? formatDateTime(report.shiftEnd).split(' ')[1] : 'Present'}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Sales Count:</span>
+                  <span className="font-bold">{report.transactionCount} txns</span>
+                </div>
               </div>
-              {report.totalDiscounts > 0 && (
-                <div className="flex justify-between text-red-700">
-                  <span>Discounts Given:</span>
+
+              {/* Financial Breakdown */}
+              <div className="py-1.5 text-[10px] border-b border-dashed border-gray-400 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>Gross Sales:</span>
+                  <span>{formatPeso(report.grossSales)}</span>
+                </div>
+                <div className="flex justify-between text-red-600">
+                  <span>Discounts:</span>
                   <span>-{formatPeso(report.totalDiscounts)}</span>
                 </div>
-              )}
-              <div className="flex justify-between font-bold text-xs pt-1 border-t border-gray-200">
-                <span>NET SALES:</span>
-                <span className="font-black">{formatPeso(report.netSales)}</span>
+                <div className="flex justify-between font-bold border-t border-gray-300 pt-0.5">
+                  <span>NET SALES:</span>
+                  <span>{formatPeso(report.netSales)}</span>
+                </div>
               </div>
-            </div>
 
-            {/* Payment Method Breakdown */}
-            <div className="py-2 text-[10px] border-b border-dashed border-gray-400 space-y-0.5">
-              <div className="font-bold text-[10px] pb-0.5">PAYMENT BREAKDOWN</div>
-              <div className="flex justify-between">
-                <span>Cash:</span>
-                <span className="font-bold">{formatPeso(report.payments.cash)}</span>
+              {/* Payment Methods */}
+              <div className="py-1.5 text-[9px] border-b border-dashed border-gray-400 space-y-0.5">
+                <p className="font-bold text-[9px] text-gray-600 uppercase">Payment Modes:</p>
+                <div className="flex justify-between pl-1">
+                  <span>CASH:</span>
+                  <span className="font-bold">{formatPeso(report.payments.cash)}</span>
+                </div>
+                <div className="flex justify-between pl-1">
+                  <span>GCASH:</span>
+                  <span className="font-bold">{formatPeso(report.payments.gcash)}</span>
+                </div>
+                <div className="flex justify-between pl-1">
+                  <span>MAYA:</span>
+                  <span className="font-bold">{formatPeso(report.payments.maya)}</span>
+                </div>
+                {report.payments.other > 0 && (
+                  <div className="flex justify-between pl-1">
+                    <span>OTHER:</span>
+                    <span className="font-bold">{formatPeso(report.payments.other)}</span>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span>GCash:</span>
-                <span>{formatPeso(report.payments.gcash)}</span>
+
+              {/* Department Breakdown */}
+              <div className="py-1.5 text-[9px] border-b border-dashed border-gray-400 space-y-0.5">
+                <p className="font-bold uppercase text-gray-600">Department Sales:</p>
+                <div className="flex justify-between pl-1">
+                  <span>Kitchen / Food:</span>
+                  <span>{formatPeso(report.kitchenRevenue)}</span>
+                </div>
+                <div className="flex justify-between pl-1">
+                  <span>Store / Retail:</span>
+                  <span>{formatPeso(report.storeRevenue)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Maya:</span>
-                <span>{formatPeso(report.payments.maya)}</span>
-              </div>
-              {report.payments.other > 0 && (
-                <div className="flex justify-between">
-                  <span>Other:</span>
-                  <span>{formatPeso(report.payments.other)}</span>
+
+              {/* Shift Drawer Reconciliation (if shift available) */}
+              {report.startingCash !== undefined && (
+                <div className="py-1.5 text-[9px] border-b border-dashed border-gray-400 space-y-0.5">
+                  <p className="font-bold uppercase text-gray-600">Drawer Reconciliation:</p>
+                  <div className="flex justify-between pl-1">
+                    <span>Opening Float:</span>
+                    <span>{formatPeso(report.startingCash)}</span>
+                  </div>
+                  <div className="flex justify-between pl-1">
+                    <span>+ Cash Sales:</span>
+                    <span>{formatPeso(report.payments.cash)}</span>
+                  </div>
+                  {report.expectedCashInDrawer !== undefined && (
+                    <div className="flex justify-between pl-1 font-bold">
+                      <span>= Expected Cash:</span>
+                      <span>{formatPeso(report.expectedCashInDrawer)}</span>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
 
-            {/* Drawer Cash Reconciliation */}
-            <div className="py-2 text-[10px] border-b border-dashed border-gray-400 space-y-0.5 bg-gray-50 p-1.5 rounded-xs mt-1">
-              <div className="font-bold text-[10px]">CASH DRAWER RECONCILIATION</div>
-              <div className="flex justify-between">
-                <span>Opening Cash Float:</span>
-                <span>{formatPeso(report.startingCash || 0)}</span>
+              {/* Footer */}
+              <div className="text-center pt-2 text-[8px] text-gray-500 space-y-0.5">
+                <p>=== END OF {report.type}-READING ===</p>
+                <p>POS Terminal #01 - SOX POS</p>
               </div>
-              <div className="flex justify-between">
-                <span>Cash Sales Added:</span>
-                <span>+{formatPeso(report.payments.cash)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-xs pt-1 border-t border-gray-300">
-                <span>EXPECTED CASH:</span>
-                <span className="font-black text-black">
-                  {formatPeso(report.expectedCashInDrawer || 0)}
-                </span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="text-center pt-2 text-[9px] text-gray-500">
-              <p>*** END OF {type}-READING ***</p>
-              <p className="pt-0.5 font-sans">System Generated Audit Report</p>
             </div>
           </div>
-        </div>
 
-        {/* Raw Export Quick Actions */}
-        <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-            Report Text:
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCopyPlainText}
-              className="flex items-center gap-1 hover:text-foreground hover:underline"
-            >
-              <Copy className="h-3 w-3" />
-              Copy
-            </button>
-            <span>·</span>
-            <button
-              type="button"
-              onClick={handleDownloadSummary}
-              className="flex items-center gap-1 hover:text-foreground hover:underline"
-            >
-              <Download className="h-3 w-3" />
-              Download .txt
-            </button>
+          {/* Quick Raw Actions */}
+          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+              Raw Data:
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyPlainText}
+                className="flex items-center gap-1 hover:text-foreground hover:underline"
+              >
+                <Copy className="h-3 w-3" />
+                Copy Text
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={handleDownloadSummary}
+                className="flex items-center gap-1 hover:text-foreground hover:underline"
+              >
+                <Download className="h-3 w-3" />
+                Download .txt
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Printing Action Buttons */}
-        <div className="space-y-2 pt-1 border-t border-border">
-          <Button
-            type="button"
-            variant="emerald"
-            onClick={handleBluetoothPrint}
-            disabled={isPrinting || isConnecting}
-            className="w-full gap-2 font-bold shadow-xs py-2.5"
-          >
-            {isConnected ? (
-              <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+          {/* Printing Action Buttons */}
+          <div className="space-y-2 pt-1 border-t border-border">
+            {isBluetoothAvailable ? (
+              <Button
+                type="button"
+                variant="emerald"
+                onClick={handleBluetoothPrint}
+                disabled={isPrinting || isConnecting}
+                className="w-full gap-2 font-bold shadow-xs py-2.5"
+              >
+                {isConnected ? (
+                  <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+                ) : (
+                  <Bluetooth className="h-4 w-4" />
+                )}
+                {isPrinting
+                  ? `Printing ${type}-Reading...`
+                  : isConnecting
+                  ? 'Connecting Bluetooth...'
+                  : isConnected
+                  ? `Bluetooth Print ${type}-Reading (${deviceName || 'Thermal'})`
+                  : `Connect & Print ${type}-Reading`}
+              </Button>
             ) : (
-              <Bluetooth className="h-4 w-4" />
+              <Button
+                type="button"
+                variant="emerald"
+                onClick={handleSystemPrint}
+                className="w-full gap-2 font-bold shadow-xs py-2.5"
+              >
+                <Printer className="h-4 w-4" />
+                {isIOSPlatform ? `Print ${type}-Reading (AirPrint / System)` : `Print ${type}-Reading (System)`}
+              </Button>
             )}
-            {isPrinting
-              ? `Printing ${type}-Reading...`
-              : isConnecting
-              ? 'Connecting Bluetooth...'
-              : isConnected
-              ? `Bluetooth Print ${type}-Reading (${deviceName || 'Thermal'})`
-              : `Connect & Print ${type}-Reading`}
-          </Button>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                import('@/lib/rawbt').then(({ printReadingViaRawBT }) => {
-                  printReadingViaRawBT(report, paperWidth);
-                });
-              }}
-              className="gap-1.5 w-full font-medium text-xs border-sky-600/30 text-sky-700 hover:bg-sky-50 dark:text-sky-400"
-            >
-              <Printer className="h-3.5 w-3.5 text-sky-600" />
-              RawBT Android
-            </Button>
+            {/* Secondary Actions */}
+            <div className="grid grid-cols-2 gap-2">
+              {isBluetoothAvailable ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSystemPrint}
+                  className="gap-1.5 w-full font-medium text-xs"
+                >
+                  <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+                  System Print
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBluetoothPrint}
+                  className="gap-1.5 w-full font-medium text-xs border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
+                >
+                  <Bluetooth className="h-3.5 w-3.5 text-emerald-600" />
+                  Bluetooth Setup
+                </Button>
+              )}
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSystemPrint}
-              className="gap-1.5 w-full font-medium text-xs"
-            >
-              <Printer className="h-3.5 w-3.5 text-muted-foreground" />
-              System Print
-            </Button>
+              {platform?.isAndroid ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    import('@/lib/rawbt').then(({ printReadingViaRawBT }) => {
+                      printReadingViaRawBT(report, paperWidth);
+                    });
+                  }}
+                  className="gap-1.5 w-full font-medium text-xs border-sky-600/30 text-sky-700 hover:bg-sky-50 dark:text-sky-400"
+                >
+                  <Smartphone className="h-3.5 w-3.5 text-sky-600" />
+                  RawBT Android
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleShareReport}
+                  className="gap-1.5 w-full font-medium text-xs border-purple-600/30 text-purple-700 hover:bg-purple-50 dark:text-purple-400"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-purple-600" />
+                  Share Report
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowGuide(true)}
+                className="text-[11px] text-muted-foreground hover:text-foreground gap-1 px-2 h-8"
+              >
+                <HelpCircle className="h-3 w-3" />
+                Setup Guide
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+                className="flex-1 text-xs font-semibold h-8"
+              >
+                Close
+              </Button>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
 
-          <DialogFooter className="pt-1">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              className="w-full text-xs font-semibold"
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
+      <PrinterGuideModal
+        isOpen={showGuide}
+        onClose={() => setShowGuide(false)}
+      />
+    </>
   );
 }

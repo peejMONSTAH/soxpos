@@ -3,6 +3,8 @@
  * Supports Google Chrome on Android, Windows, macOS, and Linux
  */
 
+import { isIOS, isAndroid, isWebBluetoothSupported } from './platform';
+
 // Full canonical 128-bit lowercase UUIDs required by Chromium
 export const CANONICAL_PRINTER_SERVICES: string[] = [
   '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE Thermal Printer Service
@@ -41,12 +43,7 @@ class BluetoothPrinterService {
    * Check if Web Bluetooth is supported in the current environment
    */
   public isSupported(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      typeof navigator !== 'undefined' &&
-      'bluetooth' in navigator &&
-      typeof (navigator as any).bluetooth?.requestDevice === 'function'
-    );
+    return isWebBluetoothSupported();
   }
 
   public getDiagnosticReason(): string {
@@ -56,10 +53,13 @@ class BluetoothPrinterService {
       window.location.hostname !== 'localhost' &&
       window.location.hostname !== '127.0.0.1'
     ) {
-      return `Insecure Context (${window.location.protocol}//). Google Chrome requires HTTPS to allow Bluetooth access.`;
+      return `Insecure Context (${window.location.protocol}//). Browsers require HTTPS to allow Bluetooth access.`;
     }
-    if (!('bluetooth' in navigator)) {
-      return 'Web Bluetooth is not supported in this browser. Please use Google Chrome or Microsoft Edge on Android.';
+    if (!isWebBluetoothSupported()) {
+      if (isIOS()) {
+        return 'Apple iOS Safari and Chrome do not support Web Bluetooth natively. Please use AirPrint / System Print, or open the POS inside the Bluefy Web BLE Browser on iOS.';
+      }
+      return 'Web Bluetooth is not supported in this browser. Please use Google Chrome or Microsoft Edge.';
     }
     return 'Supported';
   }
@@ -86,7 +86,7 @@ class BluetoothPrinterService {
   public async connect(): Promise<boolean> {
     if (!this.isSupported()) {
       const reason = this.getDiagnosticReason();
-      alert(`Bluetooth cannot start:\n\n${reason}\n\nMake sure you are opening your POS site via HTTPS in Google Chrome on your Android tablet.`);
+      this.updateState({ isConnecting: false, error: reason });
       return false;
     }
 
@@ -116,7 +116,9 @@ class BluetoothPrinterService {
       // Discover writable characteristic
       const characteristic = await this.findWritableCharacteristic(server);
       if (!characteristic) {
-        throw new Error('Connected to device, but no writable ESC/POS print channel was found. If this is a Bluetooth Classic printer, use the RawBT button.');
+        throw new Error(
+          'Connected to device, but no writable ESC/POS print channel was found. If this is a Bluetooth Classic SPP printer, use RawBT or System Print.'
+        );
       }
 
       this.writeCharacteristic = characteristic;
@@ -144,7 +146,6 @@ class BluetoothPrinterService {
         isConnecting: false,
         error: msg,
       });
-      alert(`Bluetooth Pairing: ${msg}\n\nNote: If your printer uses Bluetooth Classic SPP, pair it in Android Bluetooth settings and use the 'RawBT Android' button.`);
       return false;
     }
   }

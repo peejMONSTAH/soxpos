@@ -7,6 +7,11 @@ import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
 import { generatePlainTextReceipt, ReceiptPaperWidth } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
 import {
+  getPlatformCapabilities,
+  PlatformCapabilities,
+} from '@/lib/platform';
+import { PrinterGuideModal } from '@/components/pos/PrinterGuideModal';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -23,6 +28,10 @@ import {
   FileText,
   Bluetooth,
   BluetoothConnected,
+  Share2,
+  HelpCircle,
+  Apple,
+  Smartphone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -48,7 +57,14 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
   } = usePrinterStore();
 
   const [paperWidth, setPaperWidth] = useState<ReceiptPaperWidth>(storedPaperWidth || '80mm');
+  const [platform, setPlatform] = useState<PlatformCapabilities | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
   const autoPrintedRef = useRef<string | null>(null);
+
+  // Platform detection on client mount
+  useEffect(() => {
+    setPlatform(getPlatformCapabilities());
+  }, []);
 
   // Sync stored default paper width
   useEffect(() => {
@@ -75,6 +91,23 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
 
   const handleBluetoothPrint = async () => {
     if (!sale) return;
+
+    if (!platform?.isWebBluetoothSupported) {
+      if (platform?.isIOS) {
+        toast.info('iOS Web Bluetooth Notice', {
+          description: 'Apple restricts Bluetooth in Safari/Chrome. Opening AirPrint dialog or view iOS Guide.',
+          action: {
+            label: 'iOS Guide',
+            onClick: () => setShowGuide(true),
+          },
+        });
+        handleSystemPrint();
+        return;
+      }
+      setShowGuide(true);
+      return;
+    }
+
     if (!isConnected) {
       const ok = await connectPrinter();
       if (ok) {
@@ -83,6 +116,27 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
       return;
     }
     await printBtReceipt(sale, business);
+  };
+
+  const handleShareReceipt = async () => {
+    if (!sale) return;
+    const text = generatePlainTextReceipt(sale, business, paperWidth);
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Receipt #${sale.receipt_number} - ${business?.name || 'POS'}`,
+          text: text,
+        });
+        toast.success('Receipt shared successfully');
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          handleCopyRawText();
+        }
+      }
+    } else {
+      handleCopyRawText();
+    }
   };
 
   const handleCopyRawText = () => {
@@ -107,153 +161,231 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
 
   if (!sale) return null;
 
+  const isBluetoothAvailable = platform?.isWebBluetoothSupported ?? false;
+  const isIOSPlatform = platform?.isIOS ?? false;
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md max-h-[95vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 font-bold">
-              <Check className="h-5 w-5" />
-              Sale Completed
-            </span>
-            <span className="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
-              {sale.receipt_number}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-md max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 font-bold">
+                <Check className="h-5 w-5" />
+                Sale Completed
+              </span>
+              <span className="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {sale.receipt_number}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Paper Width & Format Switcher */}
-        <div className="flex items-center justify-between bg-muted/40 p-1.5 rounded-lg border border-border text-xs">
-          <span className="text-muted-foreground font-medium pl-1">Thermal Format:</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPaperWidth('58mm')}
-              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
-                paperWidth === '58mm'
-                  ? 'bg-background shadow-xs text-foreground border border-border'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              58mm (Roll)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaperWidth('80mm')}
-              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
-                paperWidth === '80mm'
-                  ? 'bg-background shadow-xs text-foreground border border-border'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              80mm (Standard)
-            </button>
+          {/* Paper Width & Format Switcher */}
+          <div className="flex items-center justify-between bg-muted/40 p-1.5 rounded-lg border border-border text-xs">
+            <span className="text-muted-foreground font-medium pl-1">Thermal Format:</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPaperWidth('58mm')}
+                className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                  paperWidth === '58mm'
+                    ? 'bg-background shadow-xs text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                58mm (Roll)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaperWidth('80mm')}
+                className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                  paperWidth === '80mm'
+                    ? 'bg-background shadow-xs text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                80mm (Standard)
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Scrollable Receipt Preview */}
-        <div className="py-2 overflow-y-auto max-h-[46vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
-          <PrintableReceipt
-            ref={receiptRef}
-            sale={sale}
-            business={business}
-            paperWidth={paperWidth}
-          />
-        </div>
-
-        {/* Raw Export / Quick Action Bar */}
-        <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-            ESC/POS Raw:
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCopyRawText}
-              className="flex items-center gap-1 hover:text-foreground hover:underline"
-            >
-              <Copy className="h-3 w-3" />
-              Copy
-            </button>
-            <span>·</span>
-            <button
-              type="button"
-              onClick={handleDownloadTxt}
-              className="flex items-center gap-1 hover:text-foreground hover:underline"
-            >
-              <Download className="h-3 w-3" />
-              Download .txt
-            </button>
+          {/* Scrollable Receipt Preview */}
+          <div className="py-2 overflow-y-auto max-h-[44vh] flex justify-center bg-slate-100 dark:bg-slate-950/60 p-3 rounded-lg border border-border/50">
+            <PrintableReceipt
+              ref={receiptRef}
+              sale={sale}
+              business={business}
+              paperWidth={paperWidth}
+            />
           </div>
-        </div>
 
-        {/* Printing Action Buttons */}
-        <div className="space-y-2 pt-1 border-t border-border">
-          {/* Bluetooth Print Button */}
-          <Button
-            type="button"
-            variant="emerald"
-            onClick={handleBluetoothPrint}
-            disabled={isPrinting || isConnecting}
-            className="w-full gap-2 font-bold shadow-xs py-2.5"
-          >
-            {isConnected ? (
-              <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+          {/* Platform helper banner if on iOS Chrome/Safari */}
+          {isIOSPlatform && !isBluetoothAvailable && (
+            <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-300">
+              <div className="flex items-center gap-1.5 font-medium">
+                <Apple className="h-3.5 w-3.5 shrink-0 text-zinc-900 dark:text-zinc-100" />
+                <span>iOS Web: Tap <strong>Print Receipt</strong> (AirPrint)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGuide(true)}
+                className="underline hover:text-emerald-700 font-semibold flex items-center gap-0.5 shrink-0"
+              >
+                <HelpCircle className="h-3 w-3" />
+                BT Guide
+              </button>
+            </div>
+          )}
+
+          {/* Raw Export / Quick Action Bar */}
+          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+              ESC/POS Raw:
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyRawText}
+                className="flex items-center gap-1 hover:text-foreground hover:underline"
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={handleDownloadTxt}
+                className="flex items-center gap-1 hover:text-foreground hover:underline"
+              >
+                <Download className="h-3 w-3" />
+                Download .txt
+              </button>
+            </div>
+          </div>
+
+          {/* Printing Action Buttons */}
+          <div className="space-y-2 pt-1 border-t border-border">
+            {/* Primary Action Button (Adaptive: Bluetooth on supported browsers, AirPrint/System on iOS Safari/Chrome) */}
+            {isBluetoothAvailable ? (
+              <Button
+                type="button"
+                variant="emerald"
+                onClick={handleBluetoothPrint}
+                disabled={isPrinting || isConnecting}
+                className="w-full gap-2 font-bold shadow-xs py-2.5"
+              >
+                {isConnected ? (
+                  <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+                ) : (
+                  <Bluetooth className="h-4 w-4" />
+                )}
+                {isPrinting
+                  ? 'Sending to Bluetooth Printer...'
+                  : isConnecting
+                  ? 'Connecting Bluetooth...'
+                  : isConnected
+                  ? `Bluetooth Print (${deviceName || 'Thermal'})`
+                  : 'Connect & Print Bluetooth'}
+              </Button>
             ) : (
-              <Bluetooth className="h-4 w-4" />
+              <Button
+                type="button"
+                variant="emerald"
+                onClick={handleSystemPrint}
+                className="w-full gap-2 font-bold shadow-xs py-2.5"
+              >
+                <Printer className="h-4 w-4" />
+                {isIOSPlatform ? 'Print Receipt (AirPrint / System)' : 'Print Receipt (System)'}
+              </Button>
             )}
-            {isPrinting
-              ? 'Sending to Bluetooth Printer...'
-              : isConnecting
-              ? 'Connecting Bluetooth...'
-              : isConnected
-              ? `Bluetooth Print (${deviceName || 'Thermal'})`
-              : 'Connect & Print Bluetooth'}
-          </Button>
 
-          {/* Additional Options */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (sale) {
-                  import('@/lib/rawbt').then(({ printReceiptViaRawBT }) => {
-                    printReceiptViaRawBT(sale, business, paperWidth);
-                  });
-                }
-              }}
-              className="gap-1.5 w-full font-medium text-xs border-sky-600/30 text-sky-700 hover:bg-sky-50 dark:text-sky-400"
-            >
-              <Printer className="h-3.5 w-3.5 text-sky-600" />
-              RawBT Android
-            </Button>
+            {/* Secondary Action Grid */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* If Bluetooth is active, show System Print. If System is primary, show Bluetooth/Share */}
+              {isBluetoothAvailable ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSystemPrint}
+                  className="gap-1.5 w-full font-medium text-xs"
+                >
+                  <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+                  System Print
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBluetoothPrint}
+                  className="gap-1.5 w-full font-medium text-xs border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
+                >
+                  <Bluetooth className="h-3.5 w-3.5 text-emerald-600" />
+                  Bluetooth Setup
+                </Button>
+              )}
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSystemPrint}
-              className="gap-1.5 w-full font-medium text-xs"
-            >
-              <Printer className="h-3.5 w-3.5 text-muted-foreground" />
-              System Print
-            </Button>
+              {/* Share Receipt / RawBT on Android */}
+              {platform?.isAndroid ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (sale) {
+                      import('@/lib/rawbt').then(({ printReceiptViaRawBT }) => {
+                        printReceiptViaRawBT(sale, business, paperWidth);
+                      });
+                    }
+                  }}
+                  className="gap-1.5 w-full font-medium text-xs border-sky-600/30 text-sky-700 hover:bg-sky-50 dark:text-sky-400"
+                >
+                  <Smartphone className="h-3.5 w-3.5 text-sky-600" />
+                  RawBT Android
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleShareReceipt}
+                  className="gap-1.5 w-full font-medium text-xs border-purple-600/30 text-purple-700 hover:bg-purple-50 dark:text-purple-400"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-purple-600" />
+                  Share Receipt
+                </Button>
+              )}
+            </div>
+
+            {/* Guide & Close Bar */}
+            <div className="flex items-center gap-2 pt-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowGuide(true)}
+                className="text-[11px] text-muted-foreground hover:text-foreground gap-1 px-2 h-8"
+              >
+                <HelpCircle className="h-3 w-3" />
+                Printing Guide
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+                className="gap-1.5 flex-1 font-bold text-xs h-8"
+              >
+                <ShoppingCart className="h-3.5 w-3.5" />
+                New Sale
+              </Button>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
 
-          <DialogFooter className="pt-1">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              className="gap-1.5 w-full font-bold text-xs"
-            >
-              <ShoppingCart className="h-3.5 w-3.5" />
-              New Sale
-            </Button>
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {/* Hardware Setup Guide Modal */}
+      <PrinterGuideModal
+        isOpen={showGuide}
+        onClose={() => setShowGuide(false)}
+      />
+    </>
   );
 }

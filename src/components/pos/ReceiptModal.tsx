@@ -91,23 +91,6 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
   const handleBluetoothPrint = async () => {
     if (!sale) return;
 
-    // Check directly at click runtime for Web Bluetooth support
-    const hasBluetooth =
-      typeof navigator !== 'undefined' &&
-      'bluetooth' in navigator &&
-      typeof (navigator as any).bluetooth?.requestDevice === 'function';
-
-    if (!hasBluetooth) {
-      toast.error('Bluetooth not available in this browser', {
-        description: 'Please open this website inside the Bluefy app on iOS or Chrome on Android.',
-        action: {
-          label: 'View Guide',
-          onClick: () => setShowGuide(true),
-        },
-      });
-      return;
-    }
-
     if (!isConnected) {
       const ok = await connectPrinter();
       if (ok) {

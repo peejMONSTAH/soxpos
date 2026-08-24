@@ -93,42 +93,32 @@ class BluetoothPrinterService {
   public async connect(): Promise<boolean> {
     const navBluetooth = typeof navigator !== 'undefined' ? (navigator as any).bluetooth : null;
     if (!navBluetooth || typeof navBluetooth.requestDevice !== 'function') {
-      const reason = this.getDiagnosticReason();
-      this.updateState({ isConnecting: false, error: reason });
+      const msg = 'Web Bluetooth API is not available in this browser. Please ensure you are opening via HTTPS in Bluefy on iOS or Chrome on Android.';
+      alert(msg);
       return false;
     }
-
-    this.updateState({ isConnecting: true, error: null });
 
     try {
       let device: any = null;
 
-      // Primary scan: accept all nearby Bluetooth devices with printer UUIDs
+      // Direct requestDevice with zero delays to maintain iOS user gesture token
       try {
         device = await navBluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: CANONICAL_PRINTER_SERVICES,
         });
-      } catch (firstErr: any) {
-        if (firstErr?.name === 'NotFoundError') {
-          // User clicked Cancel in Bluetooth picker
+      } catch (err1: any) {
+        if (err1?.name === 'NotFoundError' || /cancel|dismiss/i.test(err1?.message || '')) {
           this.updateState({ isConnecting: false });
           return false;
         }
 
-        // Secondary scan fallback for iOS WebBLE/Bluefy environments requiring filters
-        console.warn('Primary scan attempt failed, trying fallback scan:', firstErr);
+        // Secondary fallback for iOS Bluefy / WebBLE
         device = await navBluetooth.requestDevice({
           filters: [
-            { namePrefix: 'POS' },
-            { namePrefix: 'MPT' },
-            { namePrefix: 'MTP' },
-            { namePrefix: 'XP' },
-            { namePrefix: 'RP' },
-            { namePrefix: 'Print' },
-            { namePrefix: 'BT' },
-            { namePrefix: 'Inner' },
             { namePrefix: '' },
+            { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] },
+            { services: ['000018f0-0000-1000-8000-00805f9b34fb'] },
           ],
           optionalServices: CANONICAL_PRINTER_SERVICES,
         });
@@ -138,6 +128,8 @@ class BluetoothPrinterService {
         this.updateState({ isConnecting: false });
         return false;
       }
+
+      this.updateState({ isConnecting: true, error: null });
 
       this.device = device;
       this.device.addEventListener('gattserverdisconnected', this.onDisconnected.bind(this));
@@ -166,8 +158,7 @@ class BluetoothPrinterService {
 
       return true;
     } catch (err: any) {
-      if (err?.name === 'NotFoundError') {
-        // User dismissed the Bluetooth picker dialog
+      if (err?.name === 'NotFoundError' || /cancel|dismiss/i.test(err?.message || '')) {
         this.updateState({ isConnecting: false });
         return false;
       }
@@ -179,6 +170,7 @@ class BluetoothPrinterService {
         isConnecting: false,
         error: msg,
       });
+      alert(`Bluetooth: ${msg}\n\nTip: Make sure the printer is turned ON, not connected to another phone/iPad, and unpair it from iPhone Settings > Bluetooth.`);
       return false;
     }
   }

@@ -121,23 +121,8 @@ export default function SettingsPage() {
     },
   });
 
-  const handlePairClick = async () => {
-    const hasBluetooth =
-      typeof navigator !== 'undefined' &&
-      'bluetooth' in navigator &&
-      typeof (navigator as any).bluetooth?.requestDevice === 'function';
-
-    if (!hasBluetooth) {
-      toast.error('Bluetooth not available in this browser', {
-        description: 'Please open this website inside the Bluefy app on iOS or Chrome on Android.',
-        action: {
-          label: 'View Guide',
-          onClick: () => setShowGuide(true),
-        },
-      });
-      return;
-    }
-    await connectPrinter();
+  const handlePairClick = () => {
+    connectPrinter();
   };
 
   const handleRawBTTest = () => {

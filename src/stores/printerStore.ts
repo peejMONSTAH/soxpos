@@ -68,6 +68,11 @@ export const usePrinterStore = create<PrinterStoreState>()(
             if (success) {
               const name = bluetoothPrinterService.getState().deviceName || 'Printer';
               toast.success(`Bluetooth connected to ${name}`);
+            } else {
+              const err = bluetoothPrinterService.getState().error;
+              if (err) {
+                toast.error('Bluetooth connection issue', { description: err });
+              }
             }
             return success;
           } catch (err: any) {

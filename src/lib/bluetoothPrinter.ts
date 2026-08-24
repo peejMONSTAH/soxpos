@@ -5,14 +5,21 @@
 
 import { isIOS, isAndroid, isWebBluetoothSupported } from './platform';
 
-// Full canonical 128-bit lowercase UUIDs required by Chromium
+// Full canonical 128-bit lowercase UUIDs required by Chromium & Web Bluetooth
 export const CANONICAL_PRINTER_SERVICES: string[] = [
   '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE Thermal Printer Service
-  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / CC2541 / Goojprt / MPT / Xprinter
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / CC2541 / Goojprt / MPT / Xprinter / POS-58
   '0000ff00-0000-1000-8000-00805f9b34fb', // Generic ESC/POS BLE Service
+  '0000fee7-0000-1000-8000-00805f9b34fb', // Tencent / MPT-II / Shopee BLE Printer Service
+  '0000fff0-0000-1000-8000-00805f9b34fb', // Generic Chinese Portable Thermal BLE
   '0000af30-0000-1000-8000-00805f9b34fb', // OEM POS Service
+  '0000ae30-0000-1000-8000-00805f9b34fb', // OEM POS Service 2
+  '0000ae00-0000-1000-8000-00805f9b34fb', // OEM POS Service 3
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // PosPrinter UUID
   '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial BLE
+  '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
+  '00001801-0000-1000-8000-00805f9b34fb', // Generic Attribute
+  '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
 ];
 
 export interface BluetoothPrinterState {
@@ -84,7 +91,8 @@ class BluetoothPrinterService {
    * MUST be invoked directly from a user click event to preserve user gesture activation.
    */
   public async connect(): Promise<boolean> {
-    if (!this.isSupported()) {
+    const navBluetooth = typeof navigator !== 'undefined' ? (navigator as any).bluetooth : null;
+    if (!navBluetooth || typeof navBluetooth.requestDevice !== 'function') {
       const reason = this.getDiagnosticReason();
       this.updateState({ isConnecting: false, error: reason });
       return false;
@@ -93,13 +101,38 @@ class BluetoothPrinterService {
     this.updateState({ isConnecting: true, error: null });
 
     try {
-      const navBluetooth = (navigator as any).bluetooth;
+      let device: any = null;
 
-      // Direct requestDevice with valid 128-bit UUIDs
-      const device = await navBluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: CANONICAL_PRINTER_SERVICES,
-      });
+      // Primary scan: accept all nearby Bluetooth devices with printer UUIDs
+      try {
+        device = await navBluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: CANONICAL_PRINTER_SERVICES,
+        });
+      } catch (firstErr: any) {
+        if (firstErr?.name === 'NotFoundError') {
+          // User clicked Cancel in Bluetooth picker
+          this.updateState({ isConnecting: false });
+          return false;
+        }
+
+        // Secondary scan fallback for iOS WebBLE/Bluefy environments requiring filters
+        console.warn('Primary scan attempt failed, trying fallback scan:', firstErr);
+        device = await navBluetooth.requestDevice({
+          filters: [
+            { namePrefix: 'POS' },
+            { namePrefix: 'MPT' },
+            { namePrefix: 'MTP' },
+            { namePrefix: 'XP' },
+            { namePrefix: 'RP' },
+            { namePrefix: 'Print' },
+            { namePrefix: 'BT' },
+            { namePrefix: 'Inner' },
+            { namePrefix: '' },
+          ],
+          optionalServices: CANONICAL_PRINTER_SERVICES,
+        });
+      }
 
       if (!device) {
         this.updateState({ isConnecting: false });

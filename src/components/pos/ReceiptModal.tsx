@@ -30,7 +30,6 @@ import {
   BluetoothConnected,
   Share2,
   HelpCircle,
-  Apple,
   Smartphone,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -92,19 +91,20 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
   const handleBluetoothPrint = async () => {
     if (!sale) return;
 
-    if (!platform?.isWebBluetoothSupported) {
-      if (platform?.isIOS) {
-        toast.info('iOS Web Bluetooth Notice', {
-          description: 'Apple restricts Bluetooth in Safari/Chrome. Opening AirPrint dialog or view iOS Guide.',
-          action: {
-            label: 'iOS Guide',
-            onClick: () => setShowGuide(true),
-          },
-        });
-        handleSystemPrint();
-        return;
-      }
-      setShowGuide(true);
+    // Check directly at click runtime for Web Bluetooth support
+    const hasBluetooth =
+      typeof navigator !== 'undefined' &&
+      'bluetooth' in navigator &&
+      typeof (navigator as any).bluetooth?.requestDevice === 'function';
+
+    if (!hasBluetooth) {
+      toast.error('Bluetooth not available in this browser', {
+        description: 'Please open this website inside the Bluefy app on iOS or Chrome on Android.',
+        action: {
+          label: 'View Guide',
+          onClick: () => setShowGuide(true),
+        },
+      });
       return;
     }
 
@@ -115,6 +115,7 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
       }
       return;
     }
+
     await printBtReceipt(sale, business);
   };
 
@@ -160,9 +161,6 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
   };
 
   if (!sale) return null;
-
-  const isBluetoothAvailable = platform?.isWebBluetoothSupported ?? false;
-  const isIOSPlatform = platform?.isIOS ?? false;
 
   return (
     <>
@@ -219,24 +217,6 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
             />
           </div>
 
-          {/* Platform helper banner if on iOS Chrome/Safari */}
-          {isIOSPlatform && !isBluetoothAvailable && (
-            <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-300">
-              <div className="flex items-center gap-1.5 font-medium">
-                <Apple className="h-3.5 w-3.5 shrink-0 text-zinc-900 dark:text-zinc-100" />
-                <span>iOS Web: Tap <strong>Print Receipt</strong> (AirPrint)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowGuide(true)}
-                className="underline hover:text-emerald-700 font-semibold flex items-center gap-0.5 shrink-0"
-              >
-                <HelpCircle className="h-3 w-3" />
-                BT Guide
-              </button>
-            </div>
-          )}
-
           {/* Raw Export / Quick Action Bar */}
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -266,64 +246,39 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
 
           {/* Printing Action Buttons */}
           <div className="space-y-2 pt-1 border-t border-border">
-            {/* Primary Action Button (Adaptive: Bluetooth on supported browsers, AirPrint/System on iOS Safari/Chrome) */}
-            {isBluetoothAvailable ? (
-              <Button
-                type="button"
-                variant="emerald"
-                onClick={handleBluetoothPrint}
-                disabled={isPrinting || isConnecting}
-                className="w-full gap-2 font-bold shadow-xs py-2.5"
-              >
-                {isConnected ? (
-                  <BluetoothConnected className="h-4 w-4 text-emerald-100" />
-                ) : (
-                  <Bluetooth className="h-4 w-4" />
-                )}
-                {isPrinting
-                  ? 'Sending to Bluetooth Printer...'
-                  : isConnecting
-                  ? 'Connecting Bluetooth...'
-                  : isConnected
-                  ? `Bluetooth Print (${deviceName || 'Thermal'})`
-                  : 'Connect & Print Bluetooth'}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="emerald"
-                onClick={handleSystemPrint}
-                className="w-full gap-2 font-bold shadow-xs py-2.5"
-              >
-                <Printer className="h-4 w-4" />
-                {isIOSPlatform ? 'Print Receipt (AirPrint / System)' : 'Print Receipt (System)'}
-              </Button>
-            )}
+            {/* Primary Action Button: Direct Bluetooth Thermal Print */}
+            <Button
+              type="button"
+              variant="emerald"
+              onClick={handleBluetoothPrint}
+              disabled={isPrinting || isConnecting}
+              className="w-full gap-2 font-bold shadow-xs py-2.5"
+            >
+              {isConnected ? (
+                <BluetoothConnected className="h-4 w-4 text-emerald-100" />
+              ) : (
+                <Bluetooth className="h-4 w-4" />
+              )}
+              {isPrinting
+                ? 'Sending to Bluetooth Printer...'
+                : isConnecting
+                ? 'Opening Device List...'
+                : isConnected
+                ? `Bluetooth Print (${deviceName || 'Thermal'})`
+                : 'Connect & Print Bluetooth'}
+            </Button>
 
             {/* Secondary Action Grid */}
             <div className="grid grid-cols-2 gap-2">
-              {/* If Bluetooth is active, show System Print. If System is primary, show Bluetooth/Share */}
-              {isBluetoothAvailable ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSystemPrint}
-                  className="gap-1.5 w-full font-medium text-xs"
-                >
-                  <Printer className="h-3.5 w-3.5 text-muted-foreground" />
-                  System Print
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleBluetoothPrint}
-                  className="gap-1.5 w-full font-medium text-xs border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
-                >
-                  <Bluetooth className="h-3.5 w-3.5 text-emerald-600" />
-                  Bluetooth Setup
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSystemPrint}
+                className="gap-1.5 w-full font-medium text-xs"
+              >
+                <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+                AirPrint / System
+              </Button>
 
               {/* Share Receipt / RawBT on Android */}
               {platform?.isAndroid ? (
@@ -365,7 +320,7 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
                 className="text-[11px] text-muted-foreground hover:text-foreground gap-1 px-2 h-8"
               >
                 <HelpCircle className="h-3 w-3" />
-                Printing Guide
+                Printer Guide
               </Button>
               <Button
                 type="button"

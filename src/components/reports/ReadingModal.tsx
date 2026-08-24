@@ -106,19 +106,21 @@ export function ReadingModal({
   });
 
   const handleBluetoothPrint = async () => {
-    if (!platform?.isWebBluetoothSupported) {
-      if (platform?.isIOS) {
-        toast.info('iOS Web Bluetooth Notice', {
-          description: 'Apple restricts Bluetooth in Safari/Chrome. Opening AirPrint dialog or view iOS Guide.',
-          action: {
-            label: 'iOS Guide',
-            onClick: () => setShowGuide(true),
-          },
-        });
-        handleSystemPrint();
-        return;
-      }
-      setShowGuide(true);
+    if (!sales || !report) return;
+
+    const hasBluetooth =
+      typeof navigator !== 'undefined' &&
+      'bluetooth' in navigator &&
+      typeof (navigator as any).bluetooth?.requestDevice === 'function';
+
+    if (!hasBluetooth) {
+      toast.error('Bluetooth not available in this browser', {
+        description: 'Please open this website inside the Bluefy app on iOS or Chrome on Android.',
+        action: {
+          label: 'View Guide',
+          onClick: () => setShowGuide(true),
+        },
+      });
       return;
     }
 

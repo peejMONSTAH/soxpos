@@ -1,6 +1,6 @@
 import { Sale, Business } from '@/types/database.types';
-import { formatPeso, formatDateTime } from '@/lib/formatters';
 import { ReadingReportData } from '@/lib/export-utils';
+import { format, parseISO, isValid } from 'date-fns';
 
 /**
  * ESC/POS Control Codes
@@ -15,40 +15,104 @@ export const ESC_POS_CODES = {
   DOUBLE_HEIGHT_ON: '\x1B\x21\x10',
   DOUBLE_WIDTH_ON: '\x1B\x21\x20',
   NORMAL: '\x1B\x21\x00',
-  FEED_AND_CUT: '\x1D\x56\x42\x00', // Full cut with feed
+  FEED_AND_CUT: '\x1D\x56\x42\x00', // Full cut with feed (80mm auto-cutter only)
   FEED_3_LINES: '\x1B\x64\x03',
 };
 
 export type ReceiptPaperWidth = '58mm' | '80mm';
 
 /**
- * Formats a plain text thermal receipt suitable for 58mm (32 cols) or 80mm (48 cols) printers.
+ * Format currency in pure ASCII for thermal receipt printers (e.g. "P15.00" / "P1,250.00")
+ * Avoids multi-byte UTF-8 currency symbols (like ₱) that corrupt on thermal Code Page 437.
+ */
+export function formatThermalMoney(amount: number | string | null | undefined): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : (amount ?? 0);
+  const n = isNaN(num) ? 0 : num;
+  const parts = n.toFixed(2).split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `P${intPart}.${parts[1]}`;
+}
+
+/**
+ * Format date & time in pure ASCII without special middle-dot symbols.
+ */
+export function formatThermalDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '-';
+  try {
+    const d = typeof dateInput === 'string' ? parseISO(dateInput) : dateInput;
+    if (!isValid(d)) return '-';
+    return format(d, 'MMM d, yyyy h:mm a');
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Word wrap helper to wrap long sentences neatly between words across column limits.
+ */
+function wordWrap(text: string, maxCols: number): string[] {
+  if (!text) return [];
+  const words = text.trim().split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    if ((currentLine + (currentLine ? ' ' : '') + word).length <= maxCols) {
+      currentLine += (currentLine ? ' ' : '') + word;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      if (word.length > maxCols) {
+        for (let i = 0; i < word.length; i += maxCols) {
+          lines.push(word.substring(i, i + maxCols));
+        }
+        currentLine = '';
+      } else {
+        currentLine = word;
+      }
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
+/**
+ * Centers text within maxCols.
+ */
+function padBoth(text: string, maxCols: number): string {
+  const t = text.trim();
+  if (t.length >= maxCols) return t.substring(0, maxCols);
+  const leftPad = Math.floor((maxCols - t.length) / 2);
+  const rightPad = maxCols - t.length - leftPad;
+  return ' '.repeat(leftPad) + t + ' '.repeat(rightPad);
+}
+
+/**
+ * Left-right justify within maxCols.
+ */
+function justify(left: string, right: string, maxCols: number): string {
+  const l = left.trim();
+  const r = right.trim();
+  const spaceNeeded = maxCols - l.length - r.length;
+  if (spaceNeeded >= 1) {
+    return l + ' '.repeat(spaceNeeded) + r;
+  }
+  const availableLeft = Math.max(1, maxCols - r.length - 1);
+  return l.substring(0, availableLeft) + ' ' + r;
+}
+
+/**
+ * Formats a plain text thermal receipt matching the on-screen preview.
  */
 export function generatePlainTextReceipt(
   sale: Sale,
   business?: Business | null,
-  width: ReceiptPaperWidth = '80mm'
+  width: ReceiptPaperWidth = '58mm'
 ): string {
   const maxCols = width === '58mm' ? 32 : 48;
   const lineDivider = '-'.repeat(maxCols);
   const doubleDivider = '='.repeat(maxCols);
 
-  const padBoth = (text: string) => {
-    if (text.length >= maxCols) return text.substring(0, maxCols);
-    const leftPad = Math.floor((maxCols - text.length) / 2);
-    const rightPad = maxCols - text.length - leftPad;
-    return ' '.repeat(leftPad) + text + ' '.repeat(rightPad);
-  };
-
-  const justify = (left: string, right: string) => {
-    const space = maxCols - left.length - right.length;
-    if (space < 1) {
-      return left.substring(0, maxCols - right.length - 1) + ' ' + right;
-    }
-    return left + ' '.repeat(space) + right;
-  };
-
-  const storeName = (business?.name || 'POS STORE').toUpperCase();
+  const storeName = (business?.name || 'SOX POS STORE').toUpperCase();
   const storeAddress = business?.address || 'General Santos City, SOCCSKSARGEN';
   const storePhone = business?.phone ? `Tel: ${business.phone}` : '';
   const headerNote = business?.receipt_header || 'Salamat sa pagpalit!';
@@ -56,27 +120,31 @@ export function generatePlainTextReceipt(
 
   const lines: string[] = [];
 
-  // Header
-  lines.push(padBoth(storeName));
-  if (storeAddress) lines.push(padBoth(storeAddress));
-  if (storePhone) lines.push(padBoth(storePhone));
-  if (headerNote) lines.push(padBoth(headerNote));
+  // 1. Store Header
+  lines.push(doubleDivider);
+  lines.push(padBoth(storeName, maxCols));
+  if (storeAddress) {
+    wordWrap(storeAddress, maxCols).forEach((l) => lines.push(padBoth(l, maxCols)));
+  }
+  if (storePhone) lines.push(padBoth(storePhone, maxCols));
+  if (headerNote) {
+    wordWrap(`"${headerNote}"`, maxCols).forEach((l) => lines.push(padBoth(l, maxCols)));
+  }
   lines.push(doubleDivider);
 
-  // Metadata
-  lines.push(justify('Receipt #:', sale.receipt_number));
-  lines.push(justify('Date:', formatDateTime(sale.created_at)));
-  lines.push(justify('Cashier:', sale.user_name || 'Staff'));
+  // 2. Metadata
+  lines.push(justify('OR No:', sale.receipt_number, maxCols));
+  lines.push(justify('Date/Time:', formatThermalDate(sale.created_at), maxCols));
+  lines.push(justify('Cashier:', sale.user_name || 'Staff', maxCols));
   if (sale.payment_reference) {
-    lines.push(justify('Ref #:', sale.payment_reference));
+    lines.push(justify('Ref No:', sale.payment_reference, maxCols));
   }
   lines.push(lineDivider);
 
-  // Column Headers
+  // 3. Column Header
   if (width === '58mm') {
-    lines.push(justify('Item / Qty x Price', 'Total'));
+    lines.push(justify('Item / Qty x Price', 'Total', maxCols));
   } else {
-    // 80mm table header
     lines.push(
       'ITEM'.padEnd(22) +
       'QTY'.padStart(5) +
@@ -86,22 +154,23 @@ export function generatePlainTextReceipt(
   }
   lines.push(lineDivider);
 
-  // Items
+  // 4. Line Items
   sale.items?.forEach((item) => {
-    const itemTotal = formatPeso(item.subtotal);
+    const itemTotal = formatThermalMoney(item.subtotal);
     const itemName = item.product_name_snapshot;
 
     if (width === '58mm') {
       lines.push(itemName);
       lines.push(
         justify(
-          `  ${item.quantity} x ${formatPeso(item.unit_price)}`,
-          itemTotal
+          `  ${item.quantity} x ${formatThermalMoney(item.unit_price)}`,
+          itemTotal,
+          maxCols
         )
       );
     } else {
-      const priceStr = formatPeso(item.unit_price);
-      const shortName = itemName.length > 20 ? itemName.substring(0, 19) + '…' : itemName;
+      const priceStr = formatThermalMoney(item.unit_price);
+      const shortName = itemName.length > 20 ? itemName.substring(0, 19) + '...' : itemName;
       lines.push(
         shortName.padEnd(22) +
         String(item.quantity).padStart(5) +
@@ -113,26 +182,30 @@ export function generatePlainTextReceipt(
 
   lines.push(lineDivider);
 
-  // Totals
-  lines.push(justify('Subtotal:', formatPeso(sale.subtotal)));
+  // 5. Totals
+  lines.push(justify('Subtotal:', formatThermalMoney(sale.subtotal), maxCols));
   if (sale.discount > 0) {
-    lines.push(justify('Discount:', `-${formatPeso(sale.discount)}`));
+    lines.push(justify('Discount:', `-${formatThermalMoney(sale.discount)}`, maxCols));
   }
   lines.push(doubleDivider);
-  lines.push(justify('TOTAL:', formatPeso(sale.total)));
+  lines.push(justify('TOTAL DUE:', formatThermalMoney(sale.total), maxCols));
   lines.push(doubleDivider);
 
-  // Payment
-  lines.push(justify('Payment Mode:', (sale.payment_method || 'cash').toUpperCase()));
-  lines.push(justify('Amount Paid:', formatPeso(sale.amount_paid)));
-  lines.push(justify('Change:', formatPeso(sale.change)));
+  // 6. Payment Details
+  lines.push(justify('Payment Mode:', (sale.payment_method || 'CASH').toUpperCase(), maxCols));
+  lines.push(justify('Amount Received:', formatThermalMoney(sale.amount_paid), maxCols));
+  lines.push(justify('Change:', formatThermalMoney(sale.change), maxCols));
   lines.push(lineDivider);
 
-  // Footer
-  lines.push(padBoth('*** SALES RECEIPT ***'));
-  if (footerNote) lines.push(padBoth(footerNote));
-  lines.push(padBoth('Please come again!'));
-  lines.push('\n\n');
+  // 7. Barcode & Footer
+  lines.push(padBoth('||||| | |||| || ||||| | |||', maxCols));
+  lines.push(padBoth(sale.receipt_number, maxCols));
+  lines.push(padBoth('*** SALES RECEIPT ***', maxCols));
+  if (footerNote) {
+    wordWrap(footerNote, maxCols).forEach((l) => lines.push(padBoth(l, maxCols)));
+  }
+  lines.push(padBoth('Thank you for your visit!', maxCols));
+  lines.push('\n\n\n\n');
 
   return lines.join('\n');
 }
@@ -147,13 +220,12 @@ export function generateEscPosBinary(
 ): Uint8Array {
   const plainText = generatePlainTextReceipt(sale, business, width);
   const textEncoder = new TextEncoder();
-  const endCommands = width === '80mm' ? '\n\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n\n';
-  const rawBytes = textEncoder.encode(
+  const endCommands = width === '80mm' ? '\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n';
+  return textEncoder.encode(
     ESC_POS_CODES.INIT +
     plainText +
     endCommands
   );
-  return rawBytes;
 }
 
 /**
@@ -161,71 +233,57 @@ export function generateEscPosBinary(
  */
 export function generatePlainTextReading(
   report: ReadingReportData,
-  width: ReceiptPaperWidth = '80mm'
+  width: ReceiptPaperWidth = '58mm'
 ): string {
   const maxCols = width === '58mm' ? 32 : 48;
   const lineDivider = '-'.repeat(maxCols);
   const doubleDivider = '='.repeat(maxCols);
 
-  const padBoth = (text: string) => {
-    if (text.length >= maxCols) return text.substring(0, maxCols);
-    const leftPad = Math.floor((maxCols - text.length) / 2);
-    const rightPad = maxCols - text.length - leftPad;
-    return ' '.repeat(leftPad) + text + ' '.repeat(rightPad);
-  };
-
-  const justify = (left: string, right: string) => {
-    const space = maxCols - left.length - right.length;
-    if (space < 1) {
-      return left.substring(0, maxCols - right.length - 1) + ' ' + right;
-    }
-    return left + ' '.repeat(space) + right;
-  };
-
   const lines: string[] = [];
 
-  lines.push(padBoth(report.businessName.toUpperCase()));
-  lines.push(padBoth(report.title));
+  lines.push(doubleDivider);
+  lines.push(padBoth(report.businessName.toUpperCase(), maxCols));
+  lines.push(padBoth(report.title, maxCols));
   lines.push(doubleDivider);
 
-  lines.push(justify('Date/Time:', formatDateTime(report.generatedAt)));
-  lines.push(justify('Cashier:', report.cashierName));
+  lines.push(justify('Date/Time:', formatThermalDate(report.generatedAt), maxCols));
+  lines.push(justify('Cashier:', report.cashierName, maxCols));
   if (report.shiftStart) {
-    lines.push(justify('Shift Started:', formatDateTime(report.shiftStart)));
+    lines.push(justify('Shift Started:', formatThermalDate(report.shiftStart), maxCols));
   }
   if (report.shiftEnd) {
-    lines.push(justify('Shift Ended:', formatDateTime(report.shiftEnd)));
+    lines.push(justify('Shift Ended:', formatThermalDate(report.shiftEnd), maxCols));
   }
-  lines.push(justify('Transactions:', String(report.transactionCount)));
+  lines.push(justify('Transactions:', String(report.transactionCount), maxCols));
   lines.push(lineDivider);
 
-  lines.push(justify('Gross Sales:', formatPeso(report.grossSales)));
+  lines.push(justify('Gross Sales:', formatThermalMoney(report.grossSales), maxCols));
   if (report.totalDiscounts > 0) {
-    lines.push(justify('Discounts Given:', `-${formatPeso(report.totalDiscounts)}`));
+    lines.push(justify('Discounts Given:', `-${formatThermalMoney(report.totalDiscounts)}`, maxCols));
   }
   lines.push(doubleDivider);
-  lines.push(justify('NET SALES:', formatPeso(report.netSales)));
+  lines.push(justify('NET SALES:', formatThermalMoney(report.netSales), maxCols));
   lines.push(doubleDivider);
 
-  lines.push(padBoth('-- PAYMENT BREAKDOWN --'));
-  lines.push(justify('Cash:', formatPeso(report.payments.cash)));
-  lines.push(justify('GCash:', formatPeso(report.payments.gcash)));
-  lines.push(justify('Maya:', formatPeso(report.payments.maya)));
+  lines.push(padBoth('-- PAYMENT BREAKDOWN --', maxCols));
+  lines.push(justify('Cash:', formatThermalMoney(report.payments.cash), maxCols));
+  lines.push(justify('GCash:', formatThermalMoney(report.payments.gcash), maxCols));
+  lines.push(justify('Maya:', formatThermalMoney(report.payments.maya), maxCols));
   if (report.payments.other > 0) {
-    lines.push(justify('Other:', formatPeso(report.payments.other)));
+    lines.push(justify('Other:', formatThermalMoney(report.payments.other), maxCols));
   }
   lines.push(lineDivider);
 
-  lines.push(padBoth('-- CASH DRAWER AUDIT --'));
-  lines.push(justify('Starting Float:', formatPeso(report.startingCash || 0)));
-  lines.push(justify('Cash Sales Added:', `+${formatPeso(report.payments.cash)}`));
+  lines.push(padBoth('-- CASH DRAWER AUDIT --', maxCols));
+  lines.push(justify('Starting Float:', formatThermalMoney(report.startingCash || 0), maxCols));
+  lines.push(justify('Cash Sales Added:', `+${formatThermalMoney(report.payments.cash)}`, maxCols));
   lines.push(doubleDivider);
-  lines.push(justify('EXPECTED CASH:', formatPeso(report.expectedCashInDrawer || 0)));
+  lines.push(justify('EXPECTED CASH:', formatThermalMoney(report.expectedCashInDrawer || 0), maxCols));
   lines.push(doubleDivider);
 
-  lines.push(padBoth(`*** END OF ${report.type}-READING ***`));
-  lines.push(padBoth('System Generated Audit Report'));
-  lines.push('\n\n');
+  lines.push(padBoth(`*** END OF ${report.type}-READING ***`, maxCols));
+  lines.push(padBoth('System Generated Audit Report', maxCols));
+  lines.push('\n\n\n\n');
 
   return lines.join('\n');
 }
@@ -239,7 +297,7 @@ export function generateReadingEscPosBinary(
 ): Uint8Array {
   const plainText = generatePlainTextReading(report, width);
   const textEncoder = new TextEncoder();
-  const endCommands = width === '80mm' ? '\n\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n\n';
+  const endCommands = width === '80mm' ? '\n\n' + ESC_POS_CODES.FEED_AND_CUT : '\n\n\n\n';
   return textEncoder.encode(
     ESC_POS_CODES.INIT +
     plainText +
@@ -248,7 +306,7 @@ export function generateReadingEscPosBinary(
 }
 
 /**
- * Generates a diagnostic Test Print receipt
+ * Generates a diagnostic Test Print receipt matching the preview
  */
 export function generateTestReceiptBinary(
   businessName = 'SOX POS',
@@ -258,37 +316,32 @@ export function generateTestReceiptBinary(
   const lineDivider = '-'.repeat(maxCols);
   const doubleDivider = '='.repeat(maxCols);
 
-  const padBoth = (text: string) => {
-    if (text.length >= maxCols) return text.substring(0, maxCols);
-    const leftPad = Math.floor((maxCols - text.length) / 2);
-    const rightPad = maxCols - text.length - leftPad;
-    return ' '.repeat(leftPad) + text + ' '.repeat(rightPad);
-  };
-
-  const justify = (left: string, right: string) => {
-    const space = maxCols - left.length - right.length;
-    if (space < 1) {
-      return left.substring(0, maxCols - right.length - 1) + ' ' + right;
-    }
-    return left + ' '.repeat(space) + right;
-  };
-
   const lines: string[] = [
-    padBoth(businessName.toUpperCase()),
-    padBoth('BLUETOOTH PRINTER TEST'),
     doubleDivider,
-    justify('Status:', 'CONNECTED [OK]'),
-    justify('Paper Width:', width),
-    justify('Column Width:', `${maxCols} Characters`),
-    justify('Date/Time:', formatDateTime(new Date().toISOString())),
+    padBoth(businessName.toUpperCase(), maxCols),
+    padBoth('BLUETOOTH PRINTER TEST', maxCols),
+    doubleDivider,
+    justify('Status:', 'CONNECTED [OK]', maxCols),
+    justify('Paper Width:', width, maxCols),
+    justify('Column Width:', `${maxCols} Characters`, maxCols),
+    justify('Date/Time:', formatThermalDate(new Date().toISOString()), maxCols),
     lineDivider,
-    padBoth('0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
-    padBoth('Testing ESC/POS Alignment:'),
-    padBoth('<< CENTER ALIGNED >>'),
-    justify('Left Item', 'Right Price'),
+    justify('Sample Item 1', formatThermalMoney(120), maxCols),
+    justify('  2 x P60.00', formatThermalMoney(120), maxCols),
+    justify('Sample Item 2', formatThermalMoney(45), maxCols),
+    justify('  1 x P45.00', formatThermalMoney(45), maxCols),
+    lineDivider,
+    justify('Subtotal:', formatThermalMoney(165), maxCols),
     doubleDivider,
-    padBoth('Bluetooth Thermal Print Success!'),
-    padBoth('RP21UB Thermal Receipt Ready'),
+    justify('TOTAL DUE:', formatThermalMoney(165), maxCols),
+    doubleDivider,
+    justify('Payment Mode:', 'CASH', maxCols),
+    justify('Amount Received:', formatThermalMoney(200), maxCols),
+    justify('Change:', formatThermalMoney(35), maxCols),
+    lineDivider,
+    padBoth('||||| | |||| || ||||| | |||', maxCols),
+    padBoth('*** TEST RECEIPT SUCCESS ***', maxCols),
+    padBoth('RP21UB Thermal Printing Ready', maxCols),
     '\n\n\n\n',
   ];
 

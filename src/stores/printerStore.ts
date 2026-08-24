@@ -89,14 +89,7 @@ export const usePrinterStore = create<PrinterStoreState>()(
         },
 
         printReceipt: async (sale: Sale, business?: Business | null) => {
-          const { paperWidth, isConnected } = get();
-          if (!isConnected) {
-            toast.error('Bluetooth printer is not connected', {
-              description: 'Please connect your thermal printer in Settings.',
-            });
-            return false;
-          }
-
+          const { paperWidth } = get();
           try {
             toast.loading('Sending receipt to Bluetooth printer...', { id: 'bt-print' });
             const bytes = generateEscPosBinary(sale, business, paperWidth);
@@ -113,14 +106,7 @@ export const usePrinterStore = create<PrinterStoreState>()(
         },
 
         printReading: async (report: ReadingReportData) => {
-          const { paperWidth, isConnected } = get();
-          if (!isConnected) {
-            toast.error('Bluetooth printer is not connected', {
-              description: 'Please connect your thermal printer in Settings.',
-            });
-            return false;
-          }
-
+          const { paperWidth } = get();
           try {
             toast.loading(`Sending ${report.type}-Reading to Bluetooth printer...`, { id: 'bt-print-reading' });
             const bytes = generateReadingEscPosBinary(report, paperWidth);
@@ -137,14 +123,7 @@ export const usePrinterStore = create<PrinterStoreState>()(
         },
 
         printTest: async (businessName?: string) => {
-          const { paperWidth, isConnected } = get();
-          if (!isConnected) {
-            toast.error('Bluetooth printer is not connected', {
-              description: 'Pair and connect your printer first.',
-            });
-            return false;
-          }
-
+          const { paperWidth } = get();
           try {
             toast.loading('Printing test receipt...', { id: 'bt-test-print' });
             const bytes = generateTestReceiptBinary(businessName || 'SOX POS', paperWidth);

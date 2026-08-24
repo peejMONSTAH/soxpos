@@ -261,11 +261,11 @@ class BluetoothPrinterService {
     });
   }
 
-  public async printBytes(bytes: Uint8Array, chunkSize = 100): Promise<void> {
-    if (!this.state.isConnected || !this.writeCharacteristic) {
+  public async printBytes(bytes: Uint8Array, chunkSize = 20): Promise<void> {
+    if (!this.writeCharacteristic) {
       const ok = await this.reconnect();
-      if (!ok) {
-        throw new Error('Printer is not connected via Bluetooth');
+      if (!ok || !this.writeCharacteristic) {
+        throw new Error('Printer is not connected via Bluetooth. Please tap Pair & Connect.');
       }
     }
 
@@ -278,16 +278,29 @@ class BluetoothPrinterService {
       for (let offset = 0; offset < totalLen; offset += chunkSize) {
         const chunk = bytes.slice(offset, Math.min(offset + chunkSize, totalLen));
 
-        if (char.properties.writeWithoutResponse) {
-          await char.writeValueWithoutResponse(chunk);
-        } else {
+        // Use the most compatible write strategy for Bluefy & Chrome
+        if (typeof char.writeValueWithoutResponse === 'function' && char.properties?.writeWithoutResponse) {
+          try {
+            await char.writeValueWithoutResponse(chunk);
+          } catch {
+            if (typeof char.writeValue === 'function') {
+              await char.writeValue(chunk);
+            }
+          }
+        } else if (typeof char.writeValue === 'function') {
           await char.writeValue(chunk);
+        } else if (typeof char.writeValueWithResponse === 'function') {
+          await char.writeValueWithResponse(chunk);
         }
 
+        // 25ms delay between BLE packets to prevent printer buffer overrun on 58mm
         if (offset + chunkSize < totalLen) {
-          await new Promise((res) => setTimeout(res, 15));
+          await new Promise((res) => setTimeout(res, 25));
         }
       }
+    } catch (err: any) {
+      console.error('Error writing bytes to printer:', err);
+      throw new Error(`Print communication error: ${err?.message || err}`);
     } finally {
       this.updateState({ isPrinting: false });
     }

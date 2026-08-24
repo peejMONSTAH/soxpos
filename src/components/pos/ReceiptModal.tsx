@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Sale, Business } from '@/types/database.types';
 import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
-import { generatePlainTextReceipt, ReceiptPaperWidth } from '@/lib/escpos';
+import { generatePlainTextReceipt, generateEscPosBinary, ReceiptPaperWidth } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
 import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
 import {
@@ -93,15 +93,18 @@ export function ReceiptModal({ isOpen, onClose, sale, business }: ReceiptModalPr
     if (!sale) return;
 
     try {
-      if (!isConnected) {
+      if (!isConnected && !bluetoothPrinterService.getState().isConnected) {
         const ok = await bluetoothPrinterService.connect();
         if (!ok) return;
       }
 
-      await printBtReceipt(sale, business);
+      toast.loading('Sending receipt to Bluetooth printer...', { id: 'bt-print-job' });
+      const bytes = generateEscPosBinary(sale, business, paperWidth);
+      await bluetoothPrinterService.printBytes(bytes);
+      toast.success('Receipt printed successfully!', { id: 'bt-print-job' });
     } catch (err: any) {
       console.error('Bluetooth print error:', err);
-      toast.error('Print Error', { description: err?.message || 'Failed to print receipt' });
+      toast.error('Print Error', { id: 'bt-print-job', description: err?.message || 'Failed to print receipt' });
       alert(`Print Error: ${err?.message || err}`);
     }
   };

@@ -16,6 +16,7 @@ import {
 } from '@/lib/platform';
 import { PrinterGuideModal } from '@/components/pos/PrinterGuideModal';
 import { PrintableReceipt } from '@/components/sales/PrintableReceipt';
+import { generateTestReceiptBinary } from '@/lib/escpos';
 import { Sale } from '@/types/database.types';
 import {
   Store,
@@ -157,6 +158,29 @@ export default function SettingsPage() {
     }
   };
 
+  const handleBleTestPrint = async () => {
+    addLog('BLE Test Print initiated...');
+    try {
+      if (!isConnected && !bluetoothPrinterService.getState().isConnected) {
+        addLog('Not connected. Triggering connect...');
+        const ok = await bluetoothPrinterService.connect();
+        if (!ok) return;
+      }
+
+      addLog('Generating test receipt ESC/POS stream...');
+      toast.loading('Sending test receipt to printer...', { id: 'bt-test-job' });
+      const bytes = generateTestReceiptBinary(business?.name || 'SOX POS', paperWidth);
+      await bluetoothPrinterService.printBytes(bytes);
+      addLog('Test print bytes successfully transmitted!');
+      toast.success('Test receipt printed successfully!', { id: 'bt-test-job' });
+    } catch (err: any) {
+      addLog(`Test Print Error: ${err?.message || err}`);
+      console.error('BLE test error:', err);
+      toast.error('Test Print Error', { id: 'bt-test-job', description: err?.message || 'Failed to print' });
+      alert(`Test Print Error: ${err?.message || err}`);
+    }
+  };
+
   const handleRawBTTest = () => {
     try {
       printTestViaRawBT(business?.name || 'SOX POS Store', paperWidth);
@@ -277,7 +301,7 @@ export default function SettingsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => printTest(business?.name)}
+                    onClick={handleBleTestPrint}
                     disabled={isPrinting}
                     className="gap-1.5 text-xs font-semibold border-emerald-600/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400"
                   >

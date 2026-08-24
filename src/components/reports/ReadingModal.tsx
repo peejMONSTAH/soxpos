@@ -5,7 +5,7 @@ import { useReactToPrint } from 'react-to-print';
 import { Sale, Shift, Business } from '@/types/database.types';
 import { computeReadingReport, ReadingReportData } from '@/lib/export-utils';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
-import { ReceiptPaperWidth, generatePlainTextReading } from '@/lib/escpos';
+import { ReceiptPaperWidth, generatePlainTextReading, generateReadingEscPosBinary } from '@/lib/escpos';
 import { usePrinterStore } from '@/stores/printerStore';
 import { bluetoothPrinterService } from '@/lib/bluetoothPrinter';
 import {
@@ -109,14 +109,21 @@ export function ReadingModal({
   const handleBluetoothPrint = async () => {
     if (!sales || !report) return;
 
-    if (!isConnected) {
-      const ok = await bluetoothPrinterService.connect();
-      if (ok) {
-        await printBtReading(report);
+    try {
+      if (!isConnected && !bluetoothPrinterService.getState().isConnected) {
+        const ok = await bluetoothPrinterService.connect();
+        if (!ok) return;
       }
-      return;
+
+      toast.loading(`Sending ${report.type}-Reading to printer...`, { id: 'bt-reading-job' });
+      const bytes = generateReadingEscPosBinary(report, paperWidth);
+      await bluetoothPrinterService.printBytes(bytes);
+      toast.success(`${report.type}-Reading printed successfully!`, { id: 'bt-reading-job' });
+    } catch (err: any) {
+      console.error('Bluetooth reading print error:', err);
+      toast.error('Print Error', { id: 'bt-reading-job', description: err?.message || 'Failed to print report' });
+      alert(`Print Error: ${err?.message || err}`);
     }
-    await printBtReading(report);
   };
 
   const handleShareReport = async () => {

@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { useSidebarStore } from '@/stores/sidebarStore';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -17,6 +18,7 @@ import {
   Clock,
   UserCircle,
   LucideIcon,
+  PanelLeftClose,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -43,9 +45,13 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
+  const isPos = pathname === '/pos';
   const role = useAuthStore((state) => state.role);
   const user = useAuthStore((state) => state.user);
+
+  const { isCollapsed, isPosSidebarOpen, toggleSidebar, togglePosSidebar } = useSidebarStore();
+  const collapsed = isPos ? !isPosSidebarOpen : isCollapsed;
+  const toggle = isPos ? togglePosSidebar : toggleSidebar;
 
   const filteredNav = NAV_ITEMS.filter((item) => {
     if (role === 'staff' && item.ownerOnly) return false;
@@ -53,11 +59,24 @@ export function Sidebar() {
   });
 
   return (
-    <aside className="hidden md:flex w-60 lg:w-64 h-full flex-col border-r border-border bg-card/60 shrink-0 select-none">
+    <aside
+      className={cn(
+        'hidden md:flex h-full flex-col border-r border-border bg-card/60 shrink-0 select-none overflow-hidden transition-all duration-200 ease-in-out',
+        collapsed ? 'w-0 border-r-0 opacity-0 pointer-events-none' : 'w-60 lg:w-64 opacity-100'
+      )}
+    >
       {/* Navigation List */}
-      <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto min-h-0">
-        <div className="px-3 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-          {role === 'owner' ? 'Management' : 'Cashier Portal'}
+      <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto min-h-0 w-60 lg:w-64">
+        <div className="flex items-center justify-between px-3 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <span>{role === 'owner' ? 'Management' : 'Cashier Portal'}</span>
+          <button
+            type="button"
+            onClick={toggle}
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+            title="Collapse Sidebar"
+          >
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {filteredNav.map((item) => {
@@ -77,20 +96,20 @@ export function Sidebar() {
             >
               <Icon
                 className={cn(
-                  'h-4 w-4 transition-transform duration-150 group-hover:scale-110',
+                  'h-4 w-4 shrink-0 transition-transform duration-150 group-hover:scale-110',
                   isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'
                 )}
               />
-              <span>{item.name}</span>
+              <span className="truncate">{item.name}</span>
             </Link>
           );
         })}
       </div>
 
       {/* User Footer info & Logout */}
-      <div className="p-3 border-t border-border bg-background/50 space-y-2">
+      <div className="p-3 border-t border-border bg-background/50 space-y-2 w-60 lg:w-64">
         <div className="flex items-center gap-3 px-2 py-1.5 rounded-lg">
-          <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-300 dark:border-emerald-800">
+          <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-300 dark:border-emerald-800 shrink-0">
             {user?.full_name?.charAt(0) || 'U'}
           </div>
           <div className="flex-1 min-w-0">

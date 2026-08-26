@@ -30,12 +30,41 @@ export const shiftsRepo = {
   },
 
   async getActiveShift(userId?: string): Promise<Shift | null> {
-    const shifts = await this.getShifts();
-    return (
-      shifts.find((s) => s.status === 'open' && (!userId || s.user_id === userId)) ||
-      shifts.find((s) => s.status === 'open') ||
-      null
-    );
+    const localShifts = getStorage<Shift[]>(KEYS.SHIFTS, []);
+    const localActive =
+      localShifts.find((s) => s.status === 'open' && (!userId || s.user_id === userId)) ||
+      localShifts.find((s) => s.status === 'open') ||
+      null;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase
+          .from('shifts')
+          .select('*, profiles(full_name)')
+          .eq('status', 'open')
+          .order('start_time', { ascending: false })
+          .limit(1);
+
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query;
+        if (data && data.length > 0 && !error) {
+          const mapped: Shift = {
+            ...data[0],
+            user_name: data[0].profiles?.full_name || 'Staff',
+          };
+          return mapped;
+        } else if (!error) {
+          return null;
+        }
+      } catch (err) {
+        console.warn('Error fetching active shift from Supabase:', err);
+      }
+    }
+
+    return localActive;
   },
 
   async startShift(

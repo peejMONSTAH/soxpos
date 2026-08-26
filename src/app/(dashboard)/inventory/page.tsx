@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dbService } from '@/lib/db';
+import { dbService, KEYS, getStorage } from '@/lib/db';
 import { useAuthStore } from '@/stores/authStore';
 import { Product, InventoryMovement, MovementType } from '@/types/database.types';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -46,6 +47,11 @@ import {
   ArrowDownLeft,
   Search,
   RefreshCw,
+  Plus,
+  FileSpreadsheet,
+  Layers,
+  TrendingUp,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -64,16 +70,20 @@ export default function InventoryPage() {
 
   const [ledgerSearch, setLedgerSearch] = useState('');
 
-  // Fetch Products
-  const { data: products = [] } = useQuery({
+  // Fetch Products with Instant Cache-First Hydration
+  const { data: products = [] } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => dbService.getProducts(),
+    initialData: () => getStorage<Product[]>(KEYS.PRODUCTS, []),
+    initialDataUpdatedAt: () => 0,
   });
 
-  // Fetch Inventory Movements
-  const { data: movements = [] } = useQuery({
+  // Fetch Inventory Movements with Instant Cache-First Hydration
+  const { data: movements = [] } = useQuery<InventoryMovement[]>({
     queryKey: ['movements'],
     queryFn: () => dbService.getInventoryMovements(),
+    initialData: () => getStorage<InventoryMovement[]>(KEYS.MOVEMENTS, []),
+    initialDataUpdatedAt: () => 0,
   });
 
   // Calculations for Inventory KPI Dashboard

@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dbService } from '@/lib/db';
+import { dbService, KEYS, getStorage } from '@/lib/db';
+import { Product, Category, Business } from '@/types/database.types';
 import { ProductGrid } from '@/components/pos/ProductGrid';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { useCartStore } from '@/stores/cartStore';
@@ -18,22 +19,28 @@ export default function POSPage() {
   const itemCount = useCartStore((state) => state.getItemCount());
   const total = useCartStore((state) => state.getTotal());
 
-  // Fetch Products
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery({
+  // Fetch Products with Instant Cache-First Hydration (0ms Load Time)
+  const { data: products = [], isFetching: isFetchingProducts } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => dbService.getProducts(),
+    initialData: () => getStorage<Product[]>(KEYS.PRODUCTS, []),
+    initialDataUpdatedAt: () => 0,
   });
 
-  // Fetch Categories
-  const { data: categories = [] } = useQuery({
+  // Fetch Categories with Instant Cache-First Hydration
+  const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => dbService.getCategories(),
+    initialData: () => getStorage<Category[]>(KEYS.CATEGORIES, []),
+    initialDataUpdatedAt: () => 0,
   });
 
   // Fetch Business Profile for receipt
-  const { data: business } = useQuery({
+  const { data: business } = useQuery<Business | null>({
     queryKey: ['business'],
     queryFn: () => dbService.getBusiness(),
+    initialData: () => getStorage<Business | null>(KEYS.BUSINESS, null),
+    initialDataUpdatedAt: () => 0,
   });
 
   const handleSaleSuccess = () => {
@@ -52,7 +59,7 @@ export default function POSPage() {
         <ProductGrid
           products={products}
           categories={categories}
-          isLoading={isLoadingProducts}
+          isLoading={products.length === 0 && isFetchingProducts}
         />
       </div>
 

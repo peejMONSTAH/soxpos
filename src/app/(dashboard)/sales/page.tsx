@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dbService } from '@/lib/db';
-import { Sale, PaymentMethod, VoidedSale } from '@/types/database.types';
+import { dbService, KEYS, getStorage } from '@/lib/db';
+import { Sale, PaymentMethod, VoidedSale, Business } from '@/types/database.types';
 import { formatPeso, formatDateTime } from '@/lib/formatters';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -91,18 +91,24 @@ export default function SalesPage() {
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ['sales'],
     queryFn: () => dbService.getSales(),
+    initialData: () => getStorage<Sale[]>(KEYS.SALES, []),
+    initialDataUpdatedAt: () => 0,
   });
 
   // Fetch Voided Sales
   const { data: voidedSales = [] } = useQuery({
     queryKey: ['voided_sales'],
     queryFn: () => dbService.getVoidedSales(),
+    initialData: () => getStorage<VoidedSale[]>(KEYS.VOIDED_SALES, []),
+    initialDataUpdatedAt: () => 0,
   });
 
   // Fetch Business info for receipts
   const { data: business } = useQuery({
     queryKey: ['business'],
     queryFn: () => dbService.getBusiness(),
+    initialData: () => getStorage<Business | null>(KEYS.BUSINESS, null),
+    initialDataUpdatedAt: () => 0,
   });
 
   const handleSyncCloud = async () => {

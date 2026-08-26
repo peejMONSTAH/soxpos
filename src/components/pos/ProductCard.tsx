@@ -5,7 +5,7 @@ import { Product } from '@/types/database.types';
 import { useCartStore } from '@/stores/cartStore';
 import { CurrencyText } from '@/components/ui/currency-text';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Check, AlertTriangle, XCircle } from 'lucide-react';
+import { AlertTriangle, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ProductCardProps {
@@ -36,15 +36,15 @@ export function ProductCard({ product, onSelectCombo }: ProductCardProps) {
       onClick={handleAdd}
       disabled={isOutOfStock || isMaxInCart}
       className={cn(
-        'group relative flex flex-col justify-between text-left p-2 sm:p-3 rounded-xl border bg-card text-card-foreground shadow-xs transition-all touch-press select-none h-full overflow-hidden focus:outline-none focus:ring-2 focus:ring-primary/40',
+        'group relative flex flex-col justify-between text-left p-2.5 sm:p-3 rounded-xl border bg-card text-card-foreground shadow-xs transition-all touch-press select-none h-full overflow-hidden focus:outline-none focus:ring-2 focus:ring-primary/40',
         isOutOfStock
           ? 'opacity-50 bg-muted/40 border-dashed border-border cursor-not-allowed'
-          : 'hover:border-primary/50 hover:shadow-md active:scale-[0.96] border-border active:bg-emerald-500/5',
+          : 'hover:border-primary/50 hover:shadow-md active:scale-[0.97] border-border active:bg-emerald-500/5',
         cartQty > 0 && 'ring-2 ring-emerald-500/80 border-emerald-500/50 bg-emerald-50/30 dark:bg-emerald-950/20'
       )}
     >
       {/* Product Image Thumbnail */}
-      <div className="relative w-full h-20 sm:h-28 rounded-lg bg-muted/60 overflow-hidden mb-1.5 sm:mb-2 border border-border/40 flex items-center justify-center">
+      <div className="relative w-full h-24 sm:h-28 md:h-32 rounded-lg bg-muted/60 overflow-hidden mb-2 border border-border/40 flex items-center justify-center shrink-0">
         {product.image_url ? (
           <img
             src={product.image_url}
@@ -57,7 +57,7 @@ export function ProductCard({ product, onSelectCombo }: ProductCardProps) {
           />
         ) : (
           <div className="flex flex-col items-center justify-center text-muted-foreground/50">
-            <span className="text-lg sm:text-2xl font-bold uppercase">{product.name.charAt(0)}</span>
+            <span className="text-xl sm:text-2xl font-bold uppercase">{product.name.charAt(0)}</span>
           </div>
         )}
 
@@ -76,41 +76,41 @@ export function ProductCard({ product, onSelectCombo }: ProductCardProps) {
         )}
 
         {/* Category Pill Tag */}
-        <span className="absolute bottom-1 left-1 sm:bottom-1.5 sm:left-1.5 text-[9px] sm:text-[10px] font-bold bg-black/70 text-white px-1.5 sm:px-2 py-0.5 rounded backdrop-blur-xs uppercase tracking-wider truncate max-w-[85%]">
+        <span className="absolute bottom-1 left-1 sm:bottom-1.5 sm:left-1.5 text-[9px] sm:text-[10px] font-bold bg-black/75 text-white px-1.5 sm:px-2 py-0.5 rounded backdrop-blur-xs uppercase tracking-wider truncate max-w-[85%]">
           {product.category_name || 'Item'}
         </span>
       </div>
 
       {/* Center: Product Name */}
-      <div className="flex-1 min-h-[36px] flex flex-col justify-center">
+      <div className="flex-1 min-h-[34px] flex flex-col justify-start mb-1.5">
         <h4 className="text-xs sm:text-sm font-semibold text-foreground line-clamp-2 leading-snug group-hover:text-primary transition-colors">
           {product.name}
         </h4>
       </div>
 
       {/* Bottom row: Price & Stock Status */}
-      <div className="flex items-end justify-between w-full pt-1 border-t border-border/50">
-        <div>
+      <div className="flex items-center justify-between w-full pt-1.5 border-t border-border/50 gap-1.5 mt-auto">
+        <div className="min-w-0">
           <CurrencyText
             amount={product.selling_price}
-            className="text-base font-bold text-emerald-700 dark:text-emerald-400"
+            className="text-sm sm:text-base font-black text-emerald-700 dark:text-emerald-400 truncate"
           />
         </div>
 
-        <div>
+        <div className="shrink-0 text-right">
           {isOutOfStock ? (
-            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-1 font-medium">
-              <XCircle className="h-2.5 w-2.5" />
+            <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 gap-0.5 font-semibold whitespace-nowrap">
+              <XCircle className="h-2.5 w-2.5 shrink-0" />
               Out
             </Badge>
           ) : isLowStock ? (
-            <Badge variant="warning" className="text-[10px] px-1.5 py-0 gap-1 font-medium">
-              <AlertTriangle className="h-2.5 w-2.5" />
+            <Badge variant="warning" className="text-[10px] px-1.5 py-0.5 gap-0.5 font-semibold whitespace-nowrap bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
               {product.stock_quantity} left
             </Badge>
           ) : (
-            <span className="text-[11px] text-muted-foreground font-medium">
-              {product.stock_quantity} in stock
+            <span className="text-[10px] sm:text-[11px] text-muted-foreground font-medium whitespace-nowrap">
+              {Number(product.stock_quantity).toLocaleString()} in stock
             </span>
           )}
         </div>

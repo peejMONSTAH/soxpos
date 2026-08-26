@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dbService } from '@/lib/db';
+import { dbService, KEYS, getStorage } from '@/lib/db';
 import { useAuthStore } from '@/stores/authStore';
 import { Product, Category, ProductUnit, ProductStatus } from '@/types/database.types';
 import { formatPeso, formatDate } from '@/lib/formatters';
@@ -85,15 +85,21 @@ export default function ProductsPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
 
-  // Fetch Products & Categories
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery({
+  // Fetch Products & Categories with Instant Cache-First Hydration
+  const { data: products = [], isFetching: isFetchingProducts } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => dbService.getProducts(),
+    initialData: () => getStorage<Product[]>(KEYS.PRODUCTS, []),
+    initialDataUpdatedAt: () => 0,
   });
 
-  const { data: categories = [] } = useQuery({
+  const isLoadingProducts = products.length === 0 && isFetchingProducts;
+
+  const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => dbService.getCategories(),
+    initialData: () => getStorage<Category[]>(KEYS.CATEGORIES, []),
+    initialDataUpdatedAt: () => 0,
   });
 
   const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
